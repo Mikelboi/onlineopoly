@@ -705,7 +705,7 @@ if (req.method === 'GET' && req.url === '/games') {
                         });
 
                         res.end(JSON.stringify({
-                            game: games[0],
+                            game: games[0], 
                             players: players
                         }));
                     }

@@ -1,5 +1,5 @@
 
-require('dotenv').config();
+require('.env').config();
 console.log('DB_HOST loaded:', !!process.env.DB_HOST);
 console.log('DB_USER loaded:', process.env.DB_USER || '(missing)');
 console.log('DB_PASSWORD loaded:', !!process.env.DB_PASSWORD);
@@ -10,6 +10,9 @@ const db = mysql.createConnection({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+    //host: "localhost",
+    //user: "root",
+    //password: "Blueman2005!",
     database: 'onlineopoly'
 });
 
