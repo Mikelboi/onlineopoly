@@ -1,0 +1,55 @@
+const fs = require('fs');
+const path = require('path');
+
+const loginPath = path.join(__dirname, '..', '..', 'client', 'Account', 'login.html');
+const registerPath = path.join(__dirname, '..', '..', 'client', 'Account', 'register.html');
+const lobbyPath = path.join(__dirname, '..', '..', 'client', 'Game', 'lobby.html');
+const roomPath = path.join(__dirname, '..', '..', 'client', 'Game', 'room.html');
+const menuPath = path.join( __dirname, '..', '..', 'client', 'Game', 'menu.html');
+
+function servePage(filePath, res) {
+    fs.readFile(filePath, (err, data) => {
+        if (err) {
+            console.error('Error loading page:', err);
+            res.writeHead(500, {
+                'Content-Type': 'text/plain'
+            });
+            res.end('Error loading page.');
+            return;
+        }
+
+        res.writeHead(200, {
+            'Content-Type': 'text/html'
+        });
+        res.end(data);
+    });
+}
+
+function handlePageRequest(req, res) {
+    const route = req.url.split('?')[0];
+
+    if (req.method !== 'GET') {
+        return false;
+    }
+
+    let filePath;
+
+    if (route === '/' || route === '/login') {
+        filePath = loginPath;
+    } else if (route === '/register') {
+        filePath = registerPath;
+    } else if (route === '/menu') {
+        filePath = menuPath;
+    } else if (route === '/lobby') {
+        filePath = lobbyPath;
+    } else if (route === '/room' || route.startsWith('/room/')) {
+        filePath = roomPath;
+    } else {
+        return false;
+    }
+
+    servePage(filePath, res);
+    return true;
+}
+
+module.exports = handlePageRequest;

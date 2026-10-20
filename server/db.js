@@ -1,16 +1,19 @@
 
-require('.env').config();
-console.log('DB_HOST loaded:', !!process.env.DB_HOST);
-console.log('DB_USER loaded:', process.env.DB_USER || '(missing)');
-console.log('DB_PASSWORD loaded:', !!process.env.DB_PASSWORD);
+//console.log('DB_HOST loaded:', !!process.env.DB_HOST);
+//console.log('DB_USER loaded:', process.env.DB_USER || '(missing)');
+//console.log('DB_PASSWORD loaded:', !!process.env.DB_PASSWORD);
 
 const mysql = require('mysql2');
+const path = require('path');
+require('dotenv').config({
+    path: path.join(__dirname, '.env')
+});
 
 const db = mysql.createConnection({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    //host: "localhost",
+    //host: "localhost", (hardcoded values)
     //user: "root",
     //password: "Blueman2005!",
     database: 'onlineopoly'
