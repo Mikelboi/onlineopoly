@@ -141,6 +141,27 @@
             text-align: center;
             margin-top: 20px;
         }
+
+        .board-center p {
+            font-size: clamp(10px, 1.5vw, 16px);
+        }
+
+        .board-center .dice-placeholder {
+            font-size: 35px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .game-board {
+                 grid-template-rows: repeat(11, minmax(30px, 1fr));
+                 gap: 1px;
+                border-width: 2px;
+            }
+
+        .board-space {
+            padding: 1px;
+        }
+}
     </style>
 </head>
 
@@ -154,6 +175,21 @@
             <p>Status: <strong id="game-status">Loading...</strong></p>
             <p>Players: <strong id="player-count">0</strong></p>
         </div>
+
+        
+        <section id="game-board-section" hidden>
+            <div class="game-board" id="game-board">
+
+                <div class="board-center">
+                    <h2>ONLINEOPOLY</h2>
+                    <p>Your game. Your properties. Your strategy.</p>
+                    <p id="current-player">Waiting for the first turn...</p>
+                    <div class="dice-placeholder">🎲 🎲</div>
+                </div>
+
+            </div>
+        </section>
+
 
         <h2>Players List</h2>
         <ul id="player-list">
@@ -169,9 +205,33 @@
         <p id="room-message"></p>
     </main>
 
+    <script src="/socket.io/socket.io.js"></script>
+
     <script>
+        console.log('Room JavaScript is running!');
+        console.log('Socket.IO library check:', typeof io);
+    
+    const socket = io();
+
+     socket.on('connect', () => {
+        console.log('Joining game:', gameId);
+        socket.emit('join-game', gameId);
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Disconnected from Socket.IO');
+    });
+
+    socket.on('test-message', (message) => {
+        console.log('Message received from game room:', message);
+    }); 
+
     const params = new URLSearchParams(window.location.search);
     const gameId = params.get('gameId');
+
+    console.log('Game ID from URL:', gameId);
+    console.log('Socket connected?', socket.connected);
+
 
     const gameIdElement = document.getElementById('game-id');
     const gameStatusElement = document.getElementById('game-status');
@@ -181,6 +241,115 @@
     const refreshButton = document.getElementById('refresh-room');
     const startButton = document.getElementById('start-game');
     const backButton = document.getElementById('Back to Games');
+
+    
+const boardSpaces = [
+    { name: "GO", type: "corner" },
+    { name: "Maple Lane", color: "#9556a5", price: 60 },
+    { name: "Community Chest", type: "special" },
+    { name: "Oak Street", color: "#9556a5", price: 60 },
+    { name: "Income Tax", type: "special" },
+    { name: "Central Station", color: "#222222", price: 200 },
+    { name: "Pine Avenue", color: "#75b9e7", price: 100 },
+    { name: "Chance", type: "special" },
+    { name: "Cedar Avenue", color: "#75b9e7", price: 100 },
+    { name: "Lake Road", color: "#75b9e7", price: 120 },
+    { name: "Jail / Visit", type: "corner" },
+
+    { name: "Willow Place", color: "#d94343", price: 140 },
+    { name: "Electric Company", color: "#aaaaaa", price: 150 },
+    { name: "Birch Street", color: "#d94343", price: 140 },
+    { name: "Elm Street", color: "#d94343", price: 160 },
+    { name: "North Station", color: "#222222", price: 200 },
+    { name: "Rose Avenue", color: "#f49ac1", price: 180 },
+    { name: "Community Chest", type: "special" },
+    { name: "Tulip Street", color: "#f49ac1", price: 180 },
+    { name: "Garden Lane", color: "#f49ac1", price: 200 },
+    { name: "Free Parking", type: "corner" },
+
+    { name: "River Road", color: "#f79436", price: 220 },
+    { name: "Chance", type: "special" },
+    { name: "Hill Street", color: "#f79436", price: 220 },
+    { name: "Valley Avenue", color: "#f79436", price: 240 },
+    { name: "East Station", color: "#222222", price: 200 },
+    { name: "Cloud Street", color: "#ed4545", price: 260 },
+    { name: "Harbor Road", color: "#ed4545", price: 260 },
+    { name: "Water Works", color: "#aaaaaa", price: 150 },
+    { name: "Sunset Avenue", color: "#ed4545", price: 280 },
+    { name: "Go To Jail", type: "corner" },
+
+    { name: "Forest Drive", color: "#f5d34d", price: 300 },
+    { name: "Meadow Lane", color: "#f5d34d", price: 300 },
+    { name: "Community Chest", type: "special" },
+    { name: "Golden Avenue", color: "#f5d34d", price: 320 },
+    { name: "West Station", color: "#222222", price: 200 },
+    { name: "Chance", type: "special" },
+    { name: "Skyline Drive", color: "#3a9a68", price: 350 },
+    { name: "Luxury Tax", type: "special" },
+    { name: "Ocean Boulevard", color: "#3a9a68", price: 400 }
+];
+
+function buildBoard() {
+    const board = document.getElementById("game-board");
+
+    // Keep the center panel and remove any old spaces.
+    board.querySelectorAll(".board-space").forEach(space => space.remove());
+
+    boardSpaces.forEach((space, index) => {
+        const tile = document.createElement("div");
+        tile.className = "board-space";
+
+        if (space.type === "corner") {
+            tile.classList.add("corner");
+        }
+
+        // Place the 40 spaces around the outer edge clockwise.
+        let row;
+        let col;
+
+        if (index <= 10) {
+            row = 11;
+            col = 11 - index;
+        } else if (index <= 19) {
+            row = 11 - (index - 10);
+            col = 1;
+        } else if (index <= 30) {
+            row = 1;
+            col = index - 19;
+        } else {
+            row = index - 29;
+            col = 11;
+        }
+
+        tile.style.gridRow = row;
+        tile.style.gridColumn = col;
+
+        if (space.color) {
+            const colorBand = document.createElement("div");
+            colorBand.className = "property-color";
+            colorBand.style.backgroundColor = space.color;
+            tile.appendChild(colorBand);
+        }
+
+        const name = document.createElement("span");
+        name.className = "space-name";
+        name.textContent = space.name;
+        tile.appendChild(name);
+
+        if (space.price !== undefined) {
+            const price = document.createElement("span");
+            price.className = "space-price";
+            price.textContent = `$${space.price}`;
+            tile.appendChild(price);
+        }
+
+        board.appendChild(tile);
+    });
+}
+
+buildBoard();
+
+
 
     async function loadRoom() {
         if (!gameId) {
@@ -207,9 +376,12 @@
                     : data.game.game_status === 'waiting'
                             ? 'Waiting'
                             : data.game.game_status;
+
+            document.getElementById('game-board-section').hidden =
+                data.game.game_status !== 'in_progress';
             playerCountElement.textContent = data.players.length;
 
-        startButton.disabled = true;
+            startButton.disabled = true;
 
         const sessionResponse = await fetch('/session');
         const sessionData = await sessionResponse.json();
