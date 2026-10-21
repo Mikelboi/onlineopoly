@@ -213,7 +213,12 @@
     
     const socket = io();
 
+    socket.on('connect_error', (error) => {
+        console.error('Socket connection failed:', error.message);
+    });
+
      socket.on('connect', () => {
+        console.log('Socket connected successfully:', socket.id);
         console.log('Joining game:', gameId);
         socket.emit('join-game', gameId);
     });
@@ -222,9 +227,10 @@
         console.log('Disconnected from Socket.IO');
     });
 
-    socket.on('test-message', (message) => {
-        console.log('Message received from game room:', message);
-    }); 
+   
+socket.on('test-message', (message) => {
+    console.log('Message received from game room:', message);
+});
 
     const params = new URLSearchParams(window.location.search);
     const gameId = params.get('gameId');

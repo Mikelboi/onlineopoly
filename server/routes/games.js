@@ -18,7 +18,7 @@ function handleGameRequest(req, res, {
         res.end(JSON.stringify({
             message: 'Please log in before creating a game.'
         }));
-        return;
+        return true;
     }
 
     const sessionId = sessionCookie.substring(
@@ -41,32 +41,63 @@ function handleGameRequest(req, res, {
         return;
     }
 
-    db.query(
-        "INSERT INTO `Game` (game_status, player_count, host_user_id) VALUES ('waiting', 0,?)",
-        [session.userId],
-        (err, result) => {
-            if (err) {
-                console.error('Create game error:', err);
+    
+db.query(
+    "INSERT INTO `Game` (game_status, player_count, host_user_id) VALUES ('waiting', 1, ?)",
+    [session.userId],
+    (err, result) => {
+        if (err) {
+            console.error('Create game error:', err);
 
-                res.writeHead(500, {
-                    'Content-Type': 'application/json'
-                });
-                res.end(JSON.stringify({
-                    message: 'Could not create the game.'
-                }));
-                return;
-            }
-
-            res.writeHead(201, {
+            res.writeHead(500, {
                 'Content-Type': 'application/json'
             });
             res.end(JSON.stringify({
-                message: 'Game created successfully!',
-                gameId: result.insertId
+                message: 'Could not create the game.'
             }));
+            return;
         }
-    );
 
+        const gameId = result.insertId;
+
+        db.query(
+            'INSERT INTO `Player` (player_name, user_id, game_id) VALUES (?, ?, ?)',
+            [session.username, session.userId, gameId],
+            (playerErr) => {
+                if (playerErr) {
+                    console.error('Add host to game error:', playerErr);
+
+                    // Clean up the game record if adding the host fails.
+                    db.query(
+                        'DELETE FROM `Game` WHERE game_id = ?',
+                        [gameId],
+                        (deleteErr) => {
+                            if (deleteErr) {
+                                console.error('Game cleanup error:', deleteErr);
+                            }
+
+                            res.writeHead(500, {
+                                'Content-Type': 'application/json'
+                            });
+                            res.end(JSON.stringify({
+                                message: 'Game was created, but the host could not be added.'
+                            }));
+                        }
+                    );
+                    return;
+                }
+
+                res.writeHead(201, {
+                    'Content-Type': 'application/json'
+                });
+                res.end(JSON.stringify({
+                    message: 'Game created successfully!',
+                    gameId: gameId
+                }));
+            }
+        );
+    }
+);
     return true;
 }
 
@@ -86,17 +117,19 @@ if (req.method === 'POST' && req.url === '/games/join') {
         res.end(JSON.stringify({
             message: 'Please log in before joining a game.'
         }));
-        return;
+        return true;
     }
 
-    const sessionId = sessionCookie.substring(
-        'onlineopoly_session='.length
+    const sessionId = decodeURIComponent(
+        sessionCookie.substring('onlineopoly_session='.length)
     );
 
     const session = sessions.get(sessionId);
 
     if (!session || session.expiresAt <= Date.now()) {
-        if (session) sessions.delete(sessionId);
+        if (session) {
+            sessions.delete(sessionId);
+        }
 
         res.writeHead(401, {
             'Content-Type': 'application/json'
@@ -104,50 +137,31 @@ if (req.method === 'POST' && req.url === '/games/join') {
         res.end(JSON.stringify({
             message: 'Your session is invalid or expired.'
         }));
-        return;
+        return true;
     }
 
     let body = '';
-    let requestTooLarge = false;
 
     req.on('data', chunk => {
-        if (requestTooLarge) return;
-
         body += chunk;
 
         if (Buffer.byteLength(body, 'utf8') > 10000) {
-            requestTooLarge = true;
-
             res.writeHead(413, {
                 'Content-Type': 'application/json'
             });
             res.end(JSON.stringify({
                 message: 'Request too large.'
             }));
+            req.destroy();
         }
     });
 
     req.on('end', () => {
-        if (requestTooLarge) return;
-
         let gameId;
 
         try {
-            const data = JSON.parse(body);
-            gameId = data.gameId;
-
-            if (
-                !Number.isSafeInteger(gameId) ||
-                gameId <= 0
-            ) {
-                res.writeHead(400, {
-                    'Content-Type': 'application/json'
-                });
-                res.end(JSON.stringify({
-                    message: 'Please provide a valid game ID.'
-                }));
-                return;
-            }
+            const requestData = JSON.parse(body);
+            gameId = Number(requestData.gameId);
         } catch (error) {
             res.writeHead(400, {
                 'Content-Type': 'application/json'
@@ -158,9 +172,19 @@ if (req.method === 'POST' && req.url === '/games/join') {
             return;
         }
 
+        if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+            res.writeHead(400, {
+                'Content-Type': 'application/json'
+            });
+            res.end(JSON.stringify({
+                message: 'Invalid game ID.'
+            }));
+            return;
+        }
+
         db.query(
-            'SELECT game_id FROM `Game` WHERE game_id = ? AND game_status = ?',
-            [gameId, 'waiting'],
+            "SELECT game_id FROM `Game` WHERE game_id = ? AND game_status = 'waiting'",
+            [gameId],
             (err, games) => {
                 if (err) {
                     console.error('Find game error:', err);
@@ -168,7 +192,7 @@ if (req.method === 'POST' && req.url === '/games/join') {
                         'Content-Type': 'application/json'
                     });
                     res.end(JSON.stringify({
-                        message: 'Could not check the game.'
+                        message: 'Could not find the game.'
                     }));
                     return;
                 }
@@ -178,7 +202,7 @@ if (req.method === 'POST' && req.url === '/games/join') {
                         'Content-Type': 'application/json'
                     });
                     res.end(JSON.stringify({
-                        message: 'Game not found or is no longer waiting.'
+                        message: 'Waiting game not found.'
                     }));
                     return;
                 }
@@ -186,24 +210,25 @@ if (req.method === 'POST' && req.url === '/games/join') {
                 db.query(
                     'SELECT player_id FROM `Player` WHERE user_id = ? AND game_id = ?',
                     [session.userId, gameId],
-                    (err, players) => {
-                        if (err) {
-                            console.error('Check player error:', err);
+                    (playerErr, players) => {
+                        if (playerErr) {
+                            console.error('Check player error:', playerErr);
                             res.writeHead(500, {
                                 'Content-Type': 'application/json'
                             });
                             res.end(JSON.stringify({
-                                message: 'Could not check your game membership.'
+                                message: 'Could not check game membership.'
                             }));
                             return;
                         }
 
                         if (players.length > 0) {
-                            res.writeHead(409, {
+                            res.writeHead(200, {
                                 'Content-Type': 'application/json'
                             });
                             res.end(JSON.stringify({
-                                message: 'You have already joined this game.'
+                                message: 'You are already in this game.',
+                                gameId: gameId
                             }));
                             return;
                         }
@@ -211,9 +236,9 @@ if (req.method === 'POST' && req.url === '/games/join') {
                         db.query(
                             'INSERT INTO `Player` (player_name, user_id, game_id) VALUES (?, ?, ?)',
                             [session.username, session.userId, gameId],
-                            (err, result) => {
-                                if (err) {
-                                    console.error('Join game error:', err);
+                            (insertErr) => {
+                                if (insertErr) {
+                                    console.error('Join game error:', insertErr);
                                     res.writeHead(500, {
                                         'Content-Type': 'application/json'
                                     });
@@ -226,26 +251,24 @@ if (req.method === 'POST' && req.url === '/games/join') {
                                 db.query(
                                     'UPDATE `Game` SET player_count = player_count + 1 WHERE game_id = ?',
                                     [gameId],
-                                    (err) => {
-                                        if (err) {
-                                            console.error('Update player count error:', err);
+                                    (updateErr) => {
+                                        if (updateErr) {
+                                            console.error('Update player count error:', updateErr);
                                             res.writeHead(500, {
                                                 'Content-Type': 'application/json'
                                             });
                                             res.end(JSON.stringify({
-                                                message: 'Player joined, but the game count could not be updated.'
+                                                message: 'Joined the game, but could not update its player count.'
                                             }));
                                             return;
                                         }
 
-                                        res.writeHead(201, {
+                                        res.writeHead(200, {
                                             'Content-Type': 'application/json'
                                         });
                                         res.end(JSON.stringify({
-                                            message: 'You joined the game successfully!',
-                                            gameId: gameId,
-                                            playerId: result.insertId,
-                                            username: session.username
+                                            message: 'Joined game successfully!',
+                                            gameId: gameId
                                         }));
                                     }
                                 );
