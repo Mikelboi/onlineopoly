@@ -44,15 +44,15 @@
 
         .game-board {
             display: grid;
-            grid-template-columns: repeat(11, minmax(0, 1fr));
-            grid-template-rows: repeat(11, minmax(0, 1fr));
+            grid-template-columns: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
+            grid-template-rows: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
 
-            width: min(95vw, calc(100vh - 70px), 1000px);
+            width: min(95vw, calc(100vh - 40px), 1700px);
             aspect-ratio: 1 / 1;
-            margin: 5px auto;
+            margin: 12px auto 5px;
 
             gap: 2px; /* This creates the divider lines between tiles */
-            border: 4px solid black;
+            border: 2px solid black;
             background-color: black; /* Changed to black so the gaps act as dark borders */
             box-sizing: border-box;
         }
@@ -125,6 +125,11 @@
             background-color: #fafdfa;
         }
 
+        .board-space.image-only-space,
+        .board-space.corner {
+        border: none;
+    }
+
         /* Ensure images dynamically scale without ever clipping */
         .board-space img {
             max-width: 250%;
@@ -159,6 +164,95 @@
             z-index: 1;
         }
 
+        .left-space, 
+        .right-space {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .board-space.left-space img,
+        .board-space.right-space img {
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            object-fit: fill;
+            object-position: center;
+        }
+
+        .left-space img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80% !important;
+            height: auto !important;
+            max-width: none !important;
+            max-height: none !important;
+            object-fit: contain !important;
+            transform: translate(-50%, -50%) rotate(90deg);
+        }
+
+        .right-space img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80% !important;
+            height: auto !important;
+            max-width: none !important;
+            max-height: none !important;
+            object-fit: contain !important;
+            transform: translate(-50%, -50%) rotate(-90deg);
+        }
+
+        .left-space.community-chest img,
+        .left-space[class*="chest"] img,
+        .left-space img[src*="chest"],
+        .left-space img[alt*="Chest"],
+        .left-space img[alt*="chest"] {
+            width: 180% !important;
+            height: 165% !important;
+        }
+
+        .right-space.community-chest img,
+        .right-space[class*="chest"] img,
+        .right-space img[src*="chest"],
+        .right-space img[alt*="Chest"],
+        .right-space img[alt*="chest"] {
+            width: 180% !important;
+            height: 165% !important;
+        }
+
+        .bottom-space.community-chest img,
+        .bottom-space[class*="chest"] img,
+        .bottom-space img[src*="chest"],
+        .bottom-space img[alt*="Chest"],
+        .bottom-space img[alt*="chest"] {
+            width: 100% !important;
+            height: 102% !important;
+        }
+
+
+        /* Make left and right image-only spaces use the full tile */
+        .board-space.left-space.image-only-space,
+        .board-space.right-space.image-only-space {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: fill !important;
+            padding: 0 !important;
+            overflow: hidden;
+        }
+
+        /* Remove the size and rotation restrictions on the image container */
+        .board-space.left-space.image-only-space .space-content,
+        .board-space.right-space.image-only-space .space-content {
+            position: absolute;
+            inset: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            transform: none !important;
+            width: 100%;
+            height: 100%;
+        }
         /* Text styles to prevent overflowing */
         .board-space p, 
         .board-space span, 
@@ -205,11 +299,11 @@
         }
 
         .top-space .property-color {
-            top: auto;
-            bottom: 0;
+            top: 0;
+            bottom: auto;
 
-            border-top: 2px solid black;
-            border-bottom: none;
+            border-top: none;
+            border-bottom: 2px solid black;
         }
 
         .right-space .property-color {
@@ -250,8 +344,9 @@
         }
 
         .left-space .space-content {
-            inset: 0;
+            inset: 0 0 0 24%;
             transform: rotate(90deg);
+            transform-origin: center center;
         }
 
         .top-space .space-content {
@@ -260,8 +355,9 @@
         }
 
         .right-space .space-content {
-            inset: 0;
+            inset: 0 24% 0 0;
             transform: rotate(-90deg);
+            transform-origin: center center;
         }
 
         .board-space.corner .space-content,
@@ -289,9 +385,9 @@
             margin: auto 0;
 
             color: #26352b;
-            font-size: clamp(6px, 0.85vw, 11px);
-            font-weight: 700;
-            line-height: 1.15;
+            font-size: clamp(7px, 0.9vw, 12px);
+            font-weight: 800;
+            line-height: 1.2;
 
             overflow-wrap: anywhere;
         }
@@ -303,18 +399,37 @@
              top: 5px;
         }
 
-        .left-space .space-name,
+        .left-space .space-name {
+            position: relative;
+            top: 10px;
+            font-size: clamp(10px, 1vw, 13px);
+            font-weight: 900;
+            color: #17251b;
+            text-shadow: 0 0 1px rgba(0, 0, 0, 0.25);
+        }
+        
         .left-space .space-price,
         .left-space .space-instruction {
-             position: relative;
-             top: 5px;
+            position: relative;
+            top: 10px;
+            color: #222;
+            font-weight: 800;
+            text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
         }
+        
 
         .top-space .space-name,
         .top-space .space-price,
         .top-space .space-instruction {
             position: relative;
-            top: -3px;
+            top: 8px;
+        }
+
+        .bottom-space .space-name,
+        .bottom-space .space-price,
+        .bottom-space .space-instruction {
+            position: relative;
+            top: -4px;
         }
 
         
@@ -322,8 +437,28 @@
             font-size: clamp(9px, 0.85vw, 11px);
         }
 
+        .chance-space img {
+            width: 100%;
+            height: 100%;
+        }
+
+        .bottom-space.chance-space img {
+            width: 100% !important;
+            height: 150% !important;
+        }
+
+        .right-space.chance-space img {
+            width: 150% !important;
+            height: 150% !important;
+        }
+
+        .top-space.chance-space img {
+            width: 108% !important;
+            height: 108% !important;
+        }
+
         .space-price {
-            padding-top: 2px;
+            padding-top: 0px;
 
             color: #555d52;
             font-size: clamp(22px, 0.95vw, 17px);
@@ -386,13 +521,12 @@
         }
 
         .center-logo {
-            font-size: clamp(24px, 5vw, 64px);
+            font-size: clamp(38px, 5vw, 64px);
             font-weight: 900;
-            color: #e52b2b;
+            color: #fca37c;
             text-transform: uppercase;
             letter-spacing: 2px;
             transform: rotate(-35deg);
-            text-shadow: 2px 2px 0px #000;
         }
 
         /* Color definitions for property bars */
@@ -596,14 +730,61 @@
                 flex-shrink: 0;
             }
 
+           .board-space.left-space.image-only-space .space-content img.space-sprite {
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                width: 66.6667% !important;
+                height: 150% !important;
+                max-width: none !important;
+                max-height: none !important;
+                object-fit: fill !important;
+                margin: 0 !important;
+                transform: translate(-50%, -50%) rotate(90deg) !important;
+                transform-origin: center center !important;
+            }
+
+            .board-space.right-space.image-only-space .space-content img.space-sprite {
+                position: absolute !important;
+                top: 50% !important;
+                left: 50% !important;
+                width: 66.6667% !important;
+                height: 150% !important;
+                max-width: none !important;
+                max-height: none !important;
+                object-fit: fill !important;
+                margin: 0 !important;
+                transform: translate(-50%, -50%) rotate(270deg) !important;
+                transform-origin: center center !important;
+            }
+
+            .board-space.left-space.image-only-space .space-sprite {
+                rotate: 90deg !important;
+            }
+
+            .board-space.right-space.image-only-space .space-sprite {
+                rotate: 270deg !important;
+            }
+
+
             .game-board {
                 width: 98vw;
+                max-width: none;
                 gap: 1px;
                 border-width: 2px;
+
             }
 
             .board-space {
                 padding: 1px;
+            }
+
+            .board-space.left-space.image-only-space .space-sprite {
+                transform: translate(-50%, -50%) rotate(90deg) !important;
+            }
+
+            .board-center h2.center-logo {
+                color: #e2a286 !important;
             }
 
             
@@ -611,15 +792,12 @@
     </style>
 </head>
 <body>
-    <h1>Onlineopoly</h1>
+    <h1></h1>
 
     <section id="game-board-section">
         <div class="game-board" id="game-board">
             <div class="board-center">
-                <h2>ONLINEOPOLY</h2>
-                <p>Your game. Your properties. Your strategy.</p>
-                <p id="current-player">Waiting for the first turn...</p>
-                <div class="dice-placeholder">🎲 🎲</div>
+                  <h2 class="center-logo">ONLINEOPOLY</h2>
             </div>
         </div>
     </section>
@@ -631,14 +809,14 @@
 
         const boardSpaces = [
             // Bottom row
-            { name: "GO", type: "corner", image: "/Game/sprites/Go.webp" },
+            { name: "GO", type: "corner", image: "/Game/sprites/Go.jpg" },
             { name: "Dragon Drive", color: "#9556a5", price: 60 },
-            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.jpg" },
             { name: "Circus Circle", color: "#9556a5", price: 60 },
             { name: "Income Tax", type: "special", text: "PAY $200" },
             { name: "Short Line", color: "#222222", price: 200, image: "/Game/sprites/short-line.jpg" },
             { name: "Oriental Avuene", color: "#75b9e7", price: 100 },
-            { name: "Chance", type: "special", image: "/Game/sprites/chance.webp" },
+            { name: "Chance", type: "special", image: "/Game/sprites/Chance.jpg" },
             { name: "Vermont Avuene", color: "#75b9e7", price: 100 },
             { name: "Canary Court", color: "#75b9e7", price: 120 },
             { name: "Jail / Visit", type: "corner", image: "/Game/sprites/visting.jpg" },
@@ -647,17 +825,17 @@
             { name: "Plumpy Place", color: "#d94343", price: 140 },
             { name: "Electric Company", color: "#aaaaaa", price: 150, image: "/Game/sprites/electric.jpg" },
             { name: "Grouch Street", color: "#d94343", price: 140 },
-            { name: "Ridiculous Road", color: "#d94343", price: 160 },
+            { name: "Rudy Road", color: "#d94343", price: 160 },
             { name: "Pennslyvania Railroad ", color: "#222222", price: 200, image: "/Game/sprites/Pennsyl.jpg"},
             { name: "Lavender Avenue", color: "#f49ac1", price: 180 },
-            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.jpg" },
             { name: "Tulip Terrance", color: "#f49ac1", price: 180 },
             { name: "Daisy Drive", color: "#f49ac1", price: 200 },
 
             // Top row
-            { name: "Free Parking", type: "corner", image: "/Game/sprites/free-parking.webp" },
+            { name: "Free Parking", type: "corner", image: "/Game/sprites/free-parking.jpg" },
             { name: "Empire Court", color: "#f79436", price: 220 },
-            { name: "Chance", type: "special", image: "/Game/sprites/Chance.webp"},
+            { name: "Chance", type: "special", image: "/Game/sprites/Chance.jpg"},
             { name: "Grove Street", color: "#f79436", price: 220 },
             { name: "Loopy Lane", color: "#f79436", price: 240 },
             { name: "B&O Railroad", color: "#222222", price: 200, image: "/Game/sprites/BO.jpg" },
@@ -670,10 +848,10 @@
             { name: "Go To Jail", type: "corner", image: "/Game/sprites/GO_TO_JAIL.webp" },
             { name: "Gump Grove", color: "#f5d34d", price: 300 },
             { name: "Potato Place", color: "#f5d34d", price: 300 },
-            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
-            { name: "Bungee Court", color: "#f5d34d", price: 320 },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.jpg" },
+            { name: "Lip Lane", color: "#f5d34d", price: 320 },
             { name: "Reading RailRoad", color: "#222222", price: 200, image:"/Game/sprites/reading.jpg" },
-            { name: "Chance", type: "special", image: "/Game/sprites/Chance.webp" },
+            { name: "Chance", type: "special", image: "/Game/sprites/Chance.jpg" },
             { name: "Park Place", color: "#1134A6", price: 350 },
             { name: "Luxury Tax", type: "special", text: "PAY $75.00" },
             { name: "Boardwalk", color: "#1134A6", price: 400 }
@@ -708,6 +886,10 @@
 
                 if (space.type === "corner") {
                     tile.classList.add("corner");
+                }
+
+                if (space.name.trim().toLowerCase() === "chance") {
+                    tile.classList.add("chance-space");
                 }
 
                 const imageOnlyNames = [
@@ -834,4 +1016,4 @@
     </script>
 </body>
 </html>
-```
+
