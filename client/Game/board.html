@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onlineopoly - Game Board</title>
+
+    <style>
+        /* ========================================
+           1. PAGE LAYOUT
+        ======================================== */
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+
+            height: 100vh;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow: hidden;
+
+            font-family: 'Franklin Gothic Medium',
+                'Arial Narrow', Arial, sans-serif;
+            color: #222;
+            background-color: #c2eccd;
+        }
+
+        h1 {
+            flex-shrink: 0;
+            margin: 5px 0;
+            text-align: center;
+            color: #238636;
+        }
+
+        #game-board-section {
+            width: 100%;
+        }
+
+        /* ========================================
+           2. BOARD GRID
+        ======================================== */
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(11, minmax(0, 1fr));
+            grid-template-rows: repeat(11, minmax(0, 1fr));
+
+            width: min(95vw, calc(100vh - 70px), 1000px);
+            aspect-ratio: 1 / 1;
+            margin: 5px auto;
+
+            gap: 2px; /* This creates the divider lines between tiles */
+            border: 4px solid black;
+            background-color: black; /* Changed to black so the gaps act as dark borders */
+            box-sizing: border-box;
+        }
+
+        /* ========================================
+           3. BOARD SPACES
+        ======================================== */
+
+        .board-space {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            overflow: hidden; 
+            padding: 4px;
+            background-color: #FFEBCD; /* Gives tiles their distinct background to reveal dividers */
+        }
+
+        .bottom-space {
+            padding-top: calc(24% + 4px);
+            padding-bottom: 4px;
+            flex-direction: column;
+        }
+
+        .bottom-space.image-only-space {
+            border: none;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        .bottom-space.image-only-space .space-content {
+            inset: 0;
+            padding: 0;
+            border: none;
+        }
+
+    
+
+        .top-space {
+            padding-bottom: calc(24% + 4px);
+            padding-top: 4px;
+            flex-direction: column-reverse;
+        }
+
+        .left-space {
+            padding-right: calc(24% + 4px);
+            padding-left: 4px;
+            flex-direction: row;
+            align-items: center;
+        }
+
+        .right-space {
+            padding-left: calc(24% + 4px);
+            padding-right: 4px;
+            flex-direction: row-reverse;
+            align-items: center;
+        }
+
+        .board-space.corner,
+        .board-space.corner-tile {
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #fafdfa;
+        }
+
+        /* Ensure images dynamically scale without ever clipping */
+        .board-space img {
+            max-width: 250%;
+            max-height: 250%;
+            width: 119%;
+            height: 113%;
+            object-fit: fill;
+            flex-shrink: 0;
+            z-index: 2;
+        }
+
+        .bottom-space.image-only-space img {
+            max-width: 250%;
+            max-height: 250%;
+            width: 118%;
+            height: 110%;
+            object-fit: fill;
+            object-position: center;
+            flex-shrink: 1;
+        }
+
+        .board-space.corner img,
+        .board-space.corner-tile img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%; /* Caps image canvas size to save rows for titles */
+            object-fit: cover; 
+            z-index: 1;
+        }
+
+        /* Text styles to prevent overflowing */
+        .board-space p, 
+        .board-space span, 
+        .board-space .title {
+            margin: 2px 0;
+            font-size: clamp(8px, 1.2vw, 12px); 
+            text-align: center;
+            line-height: 1.2;
+            z-index: 2;
+            white-space: normal;
+        }
+
+        /* ========================================
+           4. PROPERTY COLOR BANDS
+        ======================================== */
+
+        .property-color {
+            position: absolute;
+            top: 0;
+            left: 0;
+
+            width: 100%;
+            height: 24%;
+            min-height: 4px;
+
+            box-sizing: border-box;
+            border-bottom: 2px solid black; /* Crisp black separator line for the color bar */
+        }
+
+        .bottom-space .property-color {
+            top: 0;
+        }
+
+        .left-space .property-color {
+            top: 0;
+            right: 0;
+            left: auto;
+
+            width: 24%;
+            height: 100%;
+
+            border-bottom: none;
+            border-left: 2px solid black;
+        }
+
+        .top-space .property-color {
+            top: auto;
+            bottom: 0;
+
+            border-top: 2px solid black;
+            border-bottom: none;
+        }
+
+        .right-space .property-color {
+            top: 0;
+            right: auto;
+            left: 0;
+
+            width: 24%;
+            height: 100%;
+
+            border-right: 2px solid black;
+            border-bottom: none;
+        }
+
+        .board-space.corner .property-color,
+        .board-space.corner-tile .property-color {
+            display: none;
+        }
+
+        /* ========================================
+           5. SPACE CONTENT & INNER ROTATION
+        ======================================== */
+
+        .space-content {
+            position: absolute;
+            inset: 24% 0 0;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+
+            gap: 1px;
+            padding: 1px;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-align: center;
+        }
+
+        .left-space .space-content {
+            inset: 0;
+            transform: rotate(90deg);
+        }
+
+        .top-space .space-content {
+            inset: 0;
+            transform: none;
+        }
+
+        .right-space .space-content {
+            inset: 0;
+            transform: rotate(-90deg);
+        }
+
+        .board-space.corner .space-content,
+        .board-space.corner-tile .space-content {
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            padding: 6px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between; 
+            transform: none; 
+            z-index: 2;
+        }
+
+        /* ========================================
+           6. SPACE NAMES AND PRICES
+        ======================================== */
+
+        .space-name {
+            display: block;
+            width: 100%;
+            margin: auto 0;
+
+            color: #26352b;
+            font-size: clamp(6px, 0.85vw, 11px);
+            font-weight: 700;
+            line-height: 1.15;
+
+            overflow-wrap: anywhere;
+        }
+
+        .right-space .space-name,
+        .right-space .space-price,
+        .right-space .space-instruction {
+             position: relative;
+             top: 5px;
+        }
+
+        .left-space .space-name,
+        .left-space .space-price,
+        .left-space .space-instruction {
+             position: relative;
+             top: 5px;
+        }
+
+        .top-space .space-name,
+        .top-space .space-price,
+        .top-space .space-instruction {
+            position: relative;
+            top: -3px;
+        }
+
+        
+        .left-space .space-name {
+            font-size: clamp(9px, 0.85vw, 11px);
+        }
+
+        .space-price {
+            padding-top: 2px;
+
+            color: #555d52;
+            font-size: clamp(22px, 0.95vw, 17px);
+            font-weight: 700;
+        }
+
+        .space-instruction {
+            color: #222;
+            font-size: clamp(7px, 0.8vw, 11px);
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: center;
+        }
+
+        .board-space.corner .space-name,
+        .board-space.corner-tile .space-name {
+            flex: 0 0 auto;
+            font-size: clamp(10px, 1.1vw, 10px);
+            line-height: 1;
+        }
+
+        .board-space .space-price {
+            flex: 0 0 auto;
+            padding-top: 0;
+            font-size: clamp(10px, 1vw, 8px);
+        }
+
+        .luxury-tax-icon {
+            display: block;
+            font-size: 22px !important;
+            line-height: 1.2;
+            margin: 4px 0;
+            transform: scale(1.4);
+            transform-origin: center;
+        }
+
+        .income-tax-diamond {
+            display: block;
+            color: #222;
+            font-size: clamp(10px, 1.2vw, 16px);
+            line-height: 1;
+            margin-bottom: 3px;
+        }   
+
+        /* ========================================
+           7. BOARD CENTER POSITIONING
+        ======================================== */
+
+        .board-center {
+            grid-column: 2 / 11;
+            grid-row: 2 / 11;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            
+            background-color: #d8f0dc; /* Original green background for the game center canvas */
+            position: relative;
+        }
+
+        .center-logo {
+            font-size: clamp(24px, 5vw, 64px);
+            font-weight: 900;
+            color: #e52b2b;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transform: rotate(-35deg);
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        /* Color definitions for property bars */
+        .color-brown { background-color: #955436; }
+        .color-light-blue { background-color: #aae0fa; }
+        .color-pink { background-color: #d93b96; }
+        .color-orange { background-color: #f7941d; }
+        .color-red { background-color: #ed1c24; }
+        .color-yellow { background-color: #fef200; }
+        .color-green { background-color: #1fb25a; }
+        .color-dark-blue { background-color: #0072bc; }
+
+        /* ========================================
+           8. PLAYER TOKENS
+        ======================================== */
+
+        .player-token {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .player-tokens {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+
+            gap: 2px;
+            margin-top: 2px;
+        }
+
+        /* ========================================
+           9. CENTER PANEL
+        ======================================== */
+
+        .board-center {
+            grid-row: 2 / 11;
+            grid-column: 2 / 11;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+
+            padding: 12px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .board-center p {
+            font-size: clamp(10px, 1.5vw, 16px);
+        }
+
+        .board-space.corner .space-name,
+        .board-space.corner-tile .space-name,
+        .board-space.corner .space-price,
+        .board-space.corner-tile .space-price {
+            display: none !important;
+        }
+
+        /* ========================================
+           10. MOBILE LAYOUT
+        ======================================== */
+
+        @media (max-width: 600px) {
+            body {
+                padding: 5px;
+            }
+
+            /* Corner tiles: image fills the entire space */
+            .board-space.corner {
+                padding: 0;
+                overflow: hidden;
+                position: relative;
+            }
+
+            .board-space.corner .space-content {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                display: block;
+                padding: 0;
+                margin: 0;
+                transform: none;
+            }
+
+            .board-space.corner .corner-sprite {
+                position: absolute;
+                inset: 0;
+                display: block;
+                width: 100%;
+                height: 100%;
+                max-width: none;
+                max-height: none;
+                object-fit: cover;
+            }
+
+        
+            .board-space.image-only-space,
+            .board-space.image-only-space.bottom-space,
+            .board-space.image-only-space.top-space,
+            .board-space.image-only-space.left-space,
+            .board-space.image-only-space.right-space {
+                padding: 0 !important;
+                display: block !important;
+                overflow: hidden !important;
+            }
+
+            .board-space.image-only-space .property-color {
+                display: none !important;
+            }
+
+
+            .board-space.image-only-space .space-content {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+
+                width: 100% !important;
+                height: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                transform: none !important;
+            }
+
+            .board-space.image-only-space .space-sprite {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+
+                display: block !important;
+                width: 100% !important;
+                height: 100% !important;
+
+                max-width: none !important;
+                max-height: none !important;
+
+                object-fit: fill !important;
+                object-position: center !important;
+
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+            }
+
+
+        .board-space.image-only-space .property-color,
+        .board-space.image-only-space .space-name,
+        .board-space.image-only-space .space-price,
+        .board-space.image-only-space .corner-subtitle {
+            display: none !important;
+        }
+
+        .board-space.image-only-space .property-color {
+            display: none;
+        }
+
+            /* Hide all corner text and prices */
+            .board-space.corner .space-name,
+            .board-space.corner .space-price,
+            .board-space.corner .corner-subtitle {
+                display: none;
+            }
+
+            /* Regular spaces: use the available tile area */
+            .board-space:not(.corner) .space-content {
+                inset: 0;
+                justify-content: flex-end;
+                padding: 2px;
+                gap: 1px;
+            }
+
+            .board-space:not(.corner) .space-sprite {
+                width: 100%;
+                height: 75%;
+                min-height: 0;
+                flex: 1 1 auto;
+                object-fit: contain;
+            }
+
+            /* Keep names and prices readable */
+            .board-space:not(.corner) .space-name,
+            .board-space:not(.corner) .space-price {
+                flex-shrink: 0;
+            }
+
+            .game-board {
+                width: 98vw;
+                gap: 1px;
+                border-width: 2px;
+            }
+
+            .board-space {
+                padding: 1px;
+            }
+
+            
+        }
+    </style>
+</head>
+<body>
+    <h1>Onlineopoly</h1>
+
+    <section id="game-board-section">
+        <div class="game-board" id="game-board">
+            <div class="board-center">
+                <h2>ONLINEOPOLY</h2>
+                <p>Your game. Your properties. Your strategy.</p>
+                <p id="current-player">Waiting for the first turn...</p>
+                <div class="dice-placeholder">🎲 🎲</div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        /* ========================================
+           11. BOARD SPACE DATA
+        ======================================== */
+
+        const boardSpaces = [
+            // Bottom row
+            { name: "GO", type: "corner", image: "/Game/sprites/Go.webp" },
+            { name: "Dragon Drive", color: "#9556a5", price: 60 },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
+            { name: "Circus Circle", color: "#9556a5", price: 60 },
+            { name: "Income Tax", type: "special", text: "PAY $200" },
+            { name: "Short Line", color: "#222222", price: 200, image: "/Game/sprites/short-line.jpg" },
+            { name: "Oriental Avuene", color: "#75b9e7", price: 100 },
+            { name: "Chance", type: "special", image: "/Game/sprites/chance.webp" },
+            { name: "Vermont Avuene", color: "#75b9e7", price: 100 },
+            { name: "Canary Court", color: "#75b9e7", price: 120 },
+            { name: "Jail / Visit", type: "corner", image: "/Game/sprites/visting.jpg" },
+
+            // Left column
+            { name: "Plumpy Place", color: "#d94343", price: 140 },
+            { name: "Electric Company", color: "#aaaaaa", price: 150, image: "/Game/sprites/electric.jpg" },
+            { name: "Grouch Street", color: "#d94343", price: 140 },
+            { name: "Ridiculous Road", color: "#d94343", price: 160 },
+            { name: "Pennslyvania Railroad ", color: "#222222", price: 200, image: "/Game/sprites/Pennsyl.jpg"},
+            { name: "Lavender Avenue", color: "#f49ac1", price: 180 },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
+            { name: "Tulip Terrance", color: "#f49ac1", price: 180 },
+            { name: "Daisy Drive", color: "#f49ac1", price: 200 },
+
+            // Top row
+            { name: "Free Parking", type: "corner", image: "/Game/sprites/free-parking.webp" },
+            { name: "Empire Court", color: "#f79436", price: 220 },
+            { name: "Chance", type: "special", image: "/Game/sprites/Chance.webp"},
+            { name: "Grove Street", color: "#f79436", price: 220 },
+            { name: "Loopy Lane", color: "#f79436", price: 240 },
+            { name: "B&O Railroad", color: "#222222", price: 200, image: "/Game/sprites/BO.jpg" },
+            { name: "Sunset Boulevard", color: "#ed4545", price: 260 },
+            { name: "Perplexing Pass", color: "#ed4545", price: 260 },
+            { name: "Water Works", color: "#aaaaaa", price: 150, image: "/Game/sprites/water-works.jpg" },
+            { name: "Atlantic Avuene", color: "#ed4545", price: 280 },
+
+            // Right column
+            { name: "Go To Jail", type: "corner", image: "/Game/sprites/GO_TO_JAIL.webp" },
+            { name: "Gump Grove", color: "#f5d34d", price: 300 },
+            { name: "Potato Place", color: "#f5d34d", price: 300 },
+            { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.webp" },
+            { name: "Bungee Court", color: "#f5d34d", price: 320 },
+            { name: "Reading RailRoad", color: "#222222", price: 200, image:"/Game/sprites/reading.jpg" },
+            { name: "Chance", type: "special", image: "/Game/sprites/Chance.webp" },
+            { name: "Park Place", color: "#1134A6", price: 350 },
+            { name: "Luxury Tax", type: "special", text: "PAY $75.00" },
+            { name: "Boardwalk", color: "#1134A6", price: 400 }
+        ];
+
+        /* ========================================
+           12. CREATE AND POSITION BOARD SPACES
+        ======================================== */
+
+        function buildBoard() {
+            const board = document.getElementById("game-board");
+
+            // Remove previously generated spaces.
+            board.querySelectorAll(".board-space").forEach(space => {
+                space.remove();
+            });
+
+            boardSpaces.forEach((space, index) => {
+                const tile = document.createElement("div");
+                tile.className = "board-space";
+
+                // Determine which side of the board contains the tile.
+                if (index <= 10) {
+                    tile.classList.add("bottom-space");
+                } else if (index <= 19) {
+                    tile.classList.add("left-space");
+                } else if (index <= 30) {
+                    tile.classList.add("top-space");
+                } else {
+                    tile.classList.add("right-space");
+                }
+
+                if (space.type === "corner") {
+                    tile.classList.add("corner");
+                }
+
+                const imageOnlyNames = [
+                    "electric company",
+                    "water works",
+                    "short line",
+                    "reading railroad",
+                    "pennslyvania railroad",
+                    "b&o railroad",
+                    "chance",
+                    "community chest"
+                ];
+
+                if (
+                    imageOnlyNames.includes(space.name.trim().toLowerCase()) &&
+                    space.image
+                ) {
+                    tile.classList.add("image-only-space");
+                }
+
+                // Calculate the tile's grid position.
+                let row;
+                let col;
+
+                if (index <= 10) {
+                    row = 11;
+                    col = 11 - index;
+                } else if (index <= 19) {
+                    row = 11 - (index - 10);
+                    col = 1;
+                } else if (index <= 30) {
+                    row = 1;
+                    col = index - 19;
+                } else {
+                    row = index - 29;
+                    col = 11;
+                }
+
+                tile.style.gridRow = row;
+                tile.style.gridColumn = col;
+
+                // Add the property color band only to normal spaces.
+                if (space.color && !tile.classList.contains("image-only-space")) {
+                    const colorBand = document.createElement("div");
+                    colorBand.className = "property-color";
+                    colorBand.style.backgroundColor = space.color;
+                    tile.appendChild(colorBand);
+                }
+
+                // Create the content container.
+                const content = document.createElement("div");
+                content.className = "space-content";
+
+                if (space.name === "Luxury Tax") {
+                const ring = document.createElement("span");
+                ring.className = "luxury-tax-icon";
+                ring.textContent = "💍";
+                content.appendChild(ring);
+            }
+
+                        if (space.name === "Income Tax") {
+                const diamond = document.createElement("span");
+                diamond.className = "income-tax-diamond";
+                diamond.textContent = "◆";
+                content.appendChild(diamond);
+            }
+                
+                // Add a sprite when the space has one.
+                if (space.image) {
+                    const image = document.createElement("img");
+
+                    image.className = space.type === "corner"
+                        ? "corner-sprite"
+                        : "space-sprite";
+
+                    image.src = space.image;
+                    image.alt = space.name;
+
+                    content.appendChild(image);
+                }
+
+                // Add the space name only to normal tiles.
+                if (!tile.classList.contains("image-only-space")) {
+                    const name = document.createElement("span");
+                    name.className = "space-name";
+                    name.textContent = space.name;
+                    content.appendChild(name);
+                }
+
+                if (space.text) {
+                    const instruction = document.createElement("span");
+                    instruction.className = "space-instruction";
+                    instruction.textContent = space.text;
+                    content.appendChild(instruction);
+                }
+
+                // Add an optional corner subtitle.
+                if (space.subtitle) {
+                    const subtitle = document.createElement("span");
+                    subtitle.className = "corner-subtitle";
+                    subtitle.textContent = space.subtitle;
+                    content.appendChild(subtitle);
+                }
+
+                // Add the purchase price when one exists.
+               if (!tile.classList.contains("image-only-space") && space.price !== undefined) {
+                    const price = document.createElement("span");
+                    price.className = "space-price";
+                    price.textContent = `$${space.price}`;
+                    content.appendChild(price);
+                }
+
+                // Finish and insert the tile.
+                tile.appendChild(content);
+                board.appendChild(tile);
+            });
+        }
+
+        /* ========================================
+           13. INITIALIZE THE BOARD
+        ======================================== */
+
+        buildBoard();
+    </script>
+</body>
+</html>
+```
