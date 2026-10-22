@@ -38,6 +38,19 @@
             width: 100%;
         }
 
+        #game-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin: 8px auto;
+            padding: 0;
+        }
+
+        #game-controls p {
+            margin: 0;
+        }
+
         /* ========================================
            2. BOARD GRID
         ======================================== */
@@ -47,7 +60,7 @@
             grid-template-columns: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
             grid-template-rows: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
 
-            width: min(95vw, calc(100vh - 40px), 1700px);
+            width: min(92vw, 92.2vh, 1100px);
             aspect-ratio: 1 / 1;
             margin: 12px auto 5px;
 
@@ -542,33 +555,101 @@
         /* ========================================
            8. PLAYER TOKENS
         ======================================== */
+        
+        .player-tokens {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 2px;
+            position: relative;
+            z-index: 5;
+        }
 
         .player-token {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-
-            width: 18px;
-            height: 18px;
-            flex-shrink: 0;
-
-            border: 2px solid white;
+            font-size: 22px;
+            line-height: 1;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-
-            color: white;
-            font-size: 10px;
-            font-weight: bold;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #888;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
-        .player-tokens {
+
+#toggle-token-picker {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 1001;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: white;
+    color: #222;
+    cursor: pointer;
+}
+
+        #token-picker {
+            position: fixed;
+            top: 54px;
+            right: 12px;
+            z-index: 1002;
+            width: 210px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        #token-picker[hidden] {
+            display: none;
+        }
+
+        .token-picker-header {
             display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-
-            gap: 2px;
-            margin-top: 2px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
         }
+
+        #close-token-picker {
+            border: none;
+            background: transparent;
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .token-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .token-options button {
+            min-width: 0;
+            padding: 10px 4px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #f7f7f7;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .token-options button:hover {
+            background: #e8e8e8;
+        }
+
+        #token-picker-status {
+            margin: 8px 0 0;
+            font-size: 12px;
+        }
+
 
         /* ========================================
            9. CENTER PANEL
@@ -792,6 +873,40 @@
     </style>
 </head>
 <body>
+
+     <div id="game-controls">
+        <button id="rollDiceButton" type="button">Roll Dice</button>
+        <p id="diceResult">Roll the dice to move!</p>
+    </div>
+   
+        <button id="toggle-token-picker" type="button">
+            Choose Token
+        </button>
+
+        <div id="token-picker" hidden>
+            <div class="token-picker-header">
+                <strong>Choose your token</strong>
+                <button id="close-token-picker" type="button"
+                        aria-label="Close token menu">×</button>
+            </div>
+
+            <div class="token-options">
+                <button type="button" onclick="selectPlayerToken('top_hat')">🎩</button>
+                <button type="button" onclick="selectPlayerToken('race_car')">🏎️</button>
+                <button type="button" onclick="selectPlayerToken('dog')">🐕</button>
+                <button type="button" onclick="selectPlayerToken('battleship')">🚢</button>
+                <button type="button" onclick="selectPlayerToken('thimble')">🧵</button>
+                <button type="button" onclick="selectPlayerToken('boot')">👢</button>
+                <button type="button" onclick="selectPlayerToken('cat')">🐈</button>
+                <button type="button" onclick="selectPlayerToken('wheelbarrow')">🛒</button>
+                <button type="button" onclick="selectPlayerToken('duck')">🦆</button>
+                <button type="button" onclick="selectPlayerToken('windmill')">🌬️</button>
+                            </div>
+
+            <p id="token-picker-status"></p>
+        </div>
+
+    </section>
     <h1></h1>
 
     <section id="game-board-section">
@@ -802,7 +917,84 @@
         </div>
     </section>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script>
+        const socket = io();
+        socket.on('playerMoved', async (move) => {
+            const currentGameId =
+                new URLSearchParams(window.location.search).get('gameId');
+
+            if (String(move.gameId) !== String(currentGameId)) {
+                return;
+            }
+
+            await loadPlayerTokens();
+        });
+        const params = new URLSearchParams(window.location.search);
+        const gameId = params.get('gameId') || document.body.dataset.gameId;
+
+        socket.on('connect', () => {
+            console.log('Socket connected:', socket.id);
+
+            if (gameId) {
+                socket.emit('joinGame', gameId);
+            }
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Socket connection error:', error.message);
+        });
+
+        const rollDiceButton = document.getElementById('rollDiceButton');
+        const diceResult = document.getElementById('diceResult');
+
+         document.getElementById('toggle-token-picker')
+                .addEventListener('click', () => {
+                    document.getElementById('token-picker').hidden = false;
+                });
+
+        document.getElementById('close-token-picker')
+                .addEventListener('click', () => {
+                    document.getElementById('token-picker').hidden = true;
+                });
+                
+
+        rollDiceButton.addEventListener('click', async () => {
+            rollDiceButton.disabled = true;
+            diceResult.textContent = 'Rolling dice...';
+
+        
+
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const gameId = params.get('gameId') || document.body.dataset.gameId;
+
+        if (!gameId) {
+            throw new Error('Game ID is missing from the URL.');
+        }
+
+        const response = await fetch('/games/roll', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ gameId })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Could not roll dice.');
+        }
+
+        diceResult.textContent = `You rolled a ${data.dice.total} `;
+        await loadPlayerTokens();
+    } catch (error) {
+        diceResult.textContent = error.message;
+    } finally {
+        rollDiceButton.disabled = false;
+    }
+});
         /* ========================================
            11. BOARD SPACE DATA
         ======================================== */
@@ -872,6 +1064,7 @@
             boardSpaces.forEach((space, index) => {
                 const tile = document.createElement("div");
                 tile.className = "board-space";
+                tile.dataset.position = index;
 
                 // Determine which side of the board contains the tile.
                 if (index <= 10) {
@@ -1008,11 +1201,140 @@
             });
         }
 
+        
         /* ========================================
            13. INITIALIZE THE BOARD
         ======================================== */
 
         buildBoard();
+
+        
+        function placePlayerTokens(players) {
+            // Remove previously displayed tokens.
+            document.querySelectorAll('.player-tokens').forEach(container => {
+                container.remove();
+            });
+
+            const tokenIcons = {
+                top_hat: '🎩',
+                race_car: '🏎️',
+                dog: '🐕',
+                battleship: '🚢',
+                thimble: '🧵',
+                boot: '👢',
+                cat: '🐈',
+                wheelbarrow: '🛒',
+                duck: '🦆',
+                windmill: '🌬️'
+            };
+
+            players.forEach(player => {
+                const space = document.querySelector(
+                    `.board-space[data-position="${player.position}"]`
+                );
+
+                if (!space) {
+                    console.warn(
+                        'Could not find board space for player:',
+                        player.player_name,
+                        player.position
+                    );
+                    return;
+                }
+
+                let container = space.querySelector('.player-tokens');
+
+                if (!container) {
+                    container = document.createElement('div');
+                    container.className = 'player-tokens';
+                    space.appendChild(container);
+                }
+
+                const token = document.createElement('span');
+                token.className = 'player-token';
+                token.textContent = tokenIcons[player.token_type] || '❓';
+                token.title = player.player_name;
+                token.setAttribute('aria-label', player.player_name);
+
+                container.appendChild(token);
+            });
+        }
+
+
+        async function loadPlayerTokens() {
+            const params = new URLSearchParams(window.location.search);
+            const gameId = params.get("gameId");
+
+            if (!gameId) {
+                console.error("Missing gameId in URL.");
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `/game-room?gameId=${encodeURIComponent(gameId)}`
+                );
+
+                if (!response.ok) {
+                    throw new Error(`Failed to load game: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                placePlayerTokens(data.players);
+            } catch (error) {
+                console.error("Error loading player tokens:", error);
+            }
+        }
+        
+        async function selectPlayerToken(tokenType) {
+            const gameId = new URLSearchParams(window.location.search).get("gameId");
+            const status = document.getElementById("token-picker-status");
+
+            if (!gameId) {
+                status.textContent = "Game ID is missing.";
+                return;
+            }
+
+            status.textContent = "Saving your token...";
+
+            try {
+                const response = await fetch("/games/token", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ gameId, tokenType })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || "Could not save token.");
+                }
+
+                document.querySelectorAll(".token-option").forEach(button => {
+                    button.classList.toggle(
+                        "selected",
+                        button.dataset.token === tokenType
+                    );
+                });
+
+                status.textContent = "Token saved!";
+                await loadPlayerTokens();
+            } catch (error) {
+                console.error("Token selection error:", error);
+                status.textContent = error.message;
+            }
+        }
+
+        document.querySelectorAll(".token-option").forEach(button => {
+            button.addEventListener("click", () => {
+                selectPlayerToken(button.dataset.token);
+            });
+        });
+
+        loadPlayerTokens();
     </script>
 </body>
 </html>

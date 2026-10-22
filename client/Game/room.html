@@ -271,20 +271,26 @@
 
         <p id="room-message"></p>
     </main>
+<script src="/socket.io/socket.io.js"></script>
 
-    <script src="/socket.io/socket.io.js"></script>
+<script>
+    console.log('Room JavaScript is running!');
+    console.log('Socket.IO library check:', typeof io);
 
-    <script>
-        console.log('Room JavaScript is running!');
-        console.log('Socket.IO library check:', typeof io);
-    
+    // Initialize socket and game ID FIRST
     const socket = io();
+    const params = new URLSearchParams(window.location.search);
+    const gameId = params.get('gameId');
 
+    console.log('Game ID from URL:', gameId);
+    console.log('Socket connected?', socket.connected);
+
+    // Socket event listeners
     socket.on('connect_error', (error) => {
         console.error('Socket connection failed:', error.message);
     });
 
-     socket.on('connect', () => {
+    socket.on('connect', () => {
         console.log('Socket connected successfully:', socket.id);
         console.log('Joining game:', gameId);
         socket.emit('join-game', gameId);
@@ -294,16 +300,18 @@
         console.log('Disconnected from Socket.IO');
     });
 
-   
-socket.on('test-message', (message) => {
-    console.log('Message received from game room:', message);
-});
+    socket.on('test-message', (message) => {
+        console.log('Message received from game room:', message);
+    });
 
-    const params = new URLSearchParams(window.location.search);
-    const gameId = params.get('gameId');
+    socket.on('gameStarted', (data) => {
+        if (String(data.gameId) !== String(gameId)) {
+            return;
+        }
 
-    console.log('Game ID from URL:', gameId);
-    console.log('Socket connected?', socket.connected);
+        window.location.href =
+            `/board?gameId=${encodeURIComponent(data.gameId)}`;
+    });
 
 
     const gameIdElement = document.getElementById('game-id');
@@ -524,8 +532,7 @@ buildBoard();
         roomMessageElement.textContent =
             data.message || 'Game started successfully!';
 
-        window.location.href = `/board?
-        gameId=${encodeURIComponent(gameId)}`;
+            window.location.href = `/board?gameId=${encodeURIComponent(gameId)}`;
     } catch (error) {
         console.error('Error starting game:', error);
         roomMessageElement.textContent = error.message;

@@ -25,7 +25,7 @@ const server = http.createServer((req, res) => {
         return; 
     }
 
-    if (handleGameRequest(req, res, {db,sessions,SESSION_DURATION})) {
+    if (handleGameRequest(req, res, {db,sessions,SESSION_DURATION,io})) {
         return;
     }
 
@@ -41,6 +41,17 @@ const io = new Server(server);
 
 io.use((socket, next) => {
     const cookieHeader = socket.handshake.headers.cookie || '';
+
+io.on('connection', (socket) => {
+    console.log('Socket connected:', socket.data.username);
+
+    socket.on('joinGame', (gameId) => {
+        const roomName = `game-${gameId}`;
+        socket.join(roomName);
+
+        console.log(`${socket.data.username} joined ${roomName}`);
+    });
+});
 
     const sessionCookie = cookieHeader
         .split(';')
