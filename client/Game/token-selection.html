@@ -1,0 +1,214 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onlineopoly - Choose Your Token</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #c2eccd;
+            color: #222;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #238636;
+            text-align: center;
+        }
+
+        p {
+            text-align: center;
+        }
+
+        .token-options {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(65px, 1fr));
+            gap: 12px;
+            width: min(100%, 460px);
+            margin: 24px auto;
+        }
+
+        .token-options button {
+            min-height: 75px;
+            font-size: 32px;
+            background: #fffdf3;
+            border: 2px solid #356b43;
+            border-radius: 12px;
+            cursor: pointer;
+        }
+
+        .token-options button:hover {
+            background: #e3f5e7;
+        }
+
+        .token-options button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        #token-status {
+            min-height: 24px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 480px) {
+            .token-options {
+                grid-template-columns: repeat(2, minmax(65px, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Choose Your Token</h1>
+
+    <div class="token-options">
+        <button type="button" data-token="top_hat" aria-label="Top hat">🎩</button>
+        <button type="button" data-token="race_car" aria-label="Race car">🏎️</button>
+        <button type="button" data-token="dog" aria-label="Dog">🐕</button>
+        <button type="button" data-token="battleship" aria-label="Battleship">🚢</button>
+        <button type="button" data-token="thimble" aria-label="Thimble">🧵</button>
+        <button type="button" data-token="boot" aria-label="Boot">👢</button>
+        <button type="button" data-token="cat" aria-label="Cat">🐈</button>
+        <button type="button" data-token="wheelbarrow" aria-label="Wheelbarrow">🛒</button>
+        <button type="button" data-token="duck" aria-label="Duck">🦆</button>
+        <button type="button" data-token="windmill" aria-label="Windmill">🌬️</button>
+    </div>
+
+    <p id="token-status" role="status" aria-live="polite"></p>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+    console.log('Token selection script loaded');
+    document.querySelectorAll('[data-token]').forEach(button => {
+    button.addEventListener('click', () => {
+        console.log('Token button clicked:', button.dataset.token);
+    });
+});
+    const params = new URLSearchParams(window.location.search);
+    const gameId = params.get('gameId');
+    const status = document.getElementById('token-status');
+    const tokenButtons = document.querySelectorAll('[data-token]');
+
+    const socket = io();
+    console.log('Socket created. Connected:', socket.connected);
+    socket.on('connect', () => {
+        console.log('Token page socket connected:', socket.id);
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Token page socket error:', error.message);
+        console.error('Socket error details:', error);
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log('Token page socket disconnected:', reason);
+    });
+    let isSaving = false;
+
+    socket.on('connect', () => {
+        if (gameId) {
+            socket.emit('joinGame', gameId);
+        }
+    });
+
+    function waitForSocketConnection() {
+        if (socket.connected) {
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                socket.off('connect', onConnect);
+                reject(new Error('Could not connect to the game server.'));
+            }, 5000);
+
+            function onConnect() {
+                clearTimeout(timeout);
+                socket.emit('joinGame', gameId);
+                resolve();
+            }
+
+            socket.once('connect', onConnect);
+        });
+    }
+
+    tokenButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            if (isSaving) return;
+
+            if (!gameId) {
+                status.textContent = 'Game ID is missing from the URL.';
+                return;
+            }
+
+            isSaving = true;
+            tokenButtons.forEach(item => {
+                item.disabled = true;
+            });
+
+            status.textContent = 'Saving your token...';
+            console.log('Token click handler started');
+
+            try {
+                const response = await fetch('/games/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        gameId,
+                        tokenType: button.dataset.token
+                    })
+                });
+
+                const data = await response.json();
+                console.log('Token save response:', response.status, data);
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message || 'Could not save your token.'
+                    );
+                }
+            try {
+                await waitForSocketConnection();
+                console.log('Emitting tokenSelected for game:', gameId);
+                console.log('Emitting tokenSelected:', {
+                    connected: socket.connected,
+                    gameId
+                });
+                socket.emit('tokenSelected', { gameId });
+            } catch (socketError) {
+                console.error('Socket notification failed:', socketError);
+            }
+
+            status.textContent = 'Token saved! Entering the game...';
+
+            window.location.href =
+                `/board?gameId=${encodeURIComponent(gameId)}`;
+
+            } catch (error) {
+                console.error('Token selection error:', error);
+                status.textContent = error.message;
+                isSaving = false;
+
+                tokenButtons.forEach(item => {
+                    item.disabled = false;
+                });
+            }
+        });
+    });
+</script>
+</body>
+</html>

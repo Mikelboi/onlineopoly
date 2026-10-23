@@ -6,6 +6,7 @@ const registerPath = path.join(__dirname, '..', '..', 'client', 'Account', 'regi
 const lobbyPath = path.join(__dirname, '..', '..', 'client', 'Game', 'lobby.html');
 const roomPath = path.join(__dirname, '..', '..', 'client', 'Game', 'room.html');
 const boardPath = path.join(__dirname, '..', '..', 'client', 'Game', 'board.html');
+const tokenSelectionPath = path.join(__dirname, '..', '..', 'client', 'Game', 'token-selection.html');
 const menuPath = path.join( __dirname, '..', '..', 'client', 'Game', 'menu.html');
 
 function servePage(filePath, res) {
@@ -90,6 +91,8 @@ function handlePageRequest(req, res) {
         filePath = lobbyPath;
     } else if (route === '/room' || route.startsWith('/room/')) {
         filePath = roomPath;
+    } else if (route === '/token-selection') {
+        filePath = tokenSelectionPath;
     } else if (route === '/board') {
         filePath = boardPath;
     } else {

@@ -39,19 +39,9 @@ const server = http.createServer((req, res) => {
 
 const io = new Server(server);
 
+
 io.use((socket, next) => {
     const cookieHeader = socket.handshake.headers.cookie || '';
-
-io.on('connection', (socket) => {
-    console.log('Socket connected:', socket.data.username);
-
-    socket.on('joinGame', (gameId) => {
-        const roomName = `game-${gameId}`;
-        socket.join(roomName);
-
-        console.log(`${socket.data.username} joined ${roomName}`);
-    });
-});
 
     const sessionCookie = cookieHeader
         .split(';')
@@ -72,128 +62,103 @@ io.on('connection', (socket) => {
         return next(new Error('Invalid or expired session'));
     }
 
-    // Attach the verified login information to this socket.
     socket.data.userId = session.userId;
     socket.data.username = session.username;
 
     next();
 });
 
-
 io.on('connection', (socket) => {
-    console.log('A player connected:', socket.id);
+    console.log('Socket.IO connection established:', socket.id);
+    console.log('Socket connected:', socket.data.username);
 
-    socket.on('join-game', (gameId) => {
-        console.log('Received join-game event:', gameId);
+    socket.on('joinGame', (gameId) => {
+        const validGameId = Number(gameId);
 
-        // Validate the game ID.
-        if (!Number.isSafeInteger(Number(gameId)) || Number(gameId) <= 0) {
-            console.log('Invalid game ID:', gameId);
+        if (!Number.isSafeInteger(validGameId) || validGameId <= 0) {
             return;
         }
 
-        const validGameId = Number(gameId);
-
-        // Check whether this game exists.
         db.query(
-            'SELECT game_id FROM `Game` WHERE game_id = ?',
-            [validGameId],
-            (err, games) => {
+            'SELECT player_id FROM `Player` WHERE user_id = ? AND game_id = ?',
+            [socket.data.userId, validGameId],
+            (err, players) => {
                 if (err) {
-                    console.error('Check game error:', err);
+                    console.error('Game membership error:', err);
                     return;
                 }
 
-                if (games.length === 0) {
-                    console.log('Game does not exist:', validGameId);
+                if (players.length === 0) {
+                    console.log('User is not a member of this game.');
                     return;
                 }
 
-                // Check whether the logged-in user belongs to this game.
-                db.query(
-                    'SELECT player_id FROM `Player` WHERE user_id = ? AND game_id = ?',
-                    [socket.data.userId, validGameId],
-                    (err, players) => {
-                        if (err) {
-                            console.error('Check game membership error:', err);
-                            return;
-                        }
+                socket.join(`game:${validGameId}`);
+                console.log(`Socket ${socket.id} joined game:${validGameId}`);
+            }
+        );
+    });
 
-                        if (players.length === 0) {
-                            console.log(
-                                `User ${socket.data.userId} is not a member of game ${validGameId}`
-                            );
-                            return;
-                        }
+    socket.on('tokenSelected', (data) => {
+        if (!data || !Number.isSafeInteger(Number(data.gameId))) {
+            return;
+        }
 
-                        socket.join(`game:${validGameId}`);
+        const gameId = Number(data.gameId);
 
-                        console.log(
-                            `Socket ${socket.id} joined game ${validGameId}`
-                        );
-                    }
+        console.log(
+            `Token selected by ${socket.data.username}; broadcasting to game:${gameId}`
+        );
+
+        socket.to(`game:${gameId}`).emit('tokenUpdated', { gameId });
+    });
+
+    socket.on('test-message', (message) => {
+        if (
+            !message ||
+            !Number.isSafeInteger(Number(message.gameId)) ||
+            Number(message.gameId) <= 0 ||
+            typeof message.text !== 'string' ||
+            message.text.trim().length === 0 ||
+            message.text.length > 500
+        ) {
+            console.log('Rejected invalid test message:', message);
+            return;
+        }
+
+        const gameId = Number(message.gameId);
+
+        db.query(
+            'SELECT player_id FROM `Player` WHERE user_id = ? AND game_id = ?',
+            [socket.data.userId, gameId],
+            (err, players) => {
+                if (err) {
+                    console.error('Verify message sender error:', err);
+                    return;
+                }
+
+                if (players.length === 0) {
+                    console.log('Rejected message: sender is not in this game.');
+                    return;
+                }
+
+                io.to(`game:${gameId}`).emit(
+                    'test-message',
+                    message.text.trim()
+                );
+
+                console.log(
+                    `User ${socket.data.userId} sent a message to game ${gameId}`
                 );
             }
         );
     });
 
-// Temporary test event for checking messages between players.
-socket.on('test-message', (message) => {
-    // Validate the message.
-    if (
-        !message ||
-        !Number.isSafeInteger(Number(message.gameId)) ||
-        Number(message.gameId) <= 0 ||
-        typeof message.text !== 'string' ||
-        message.text.trim().length === 0 ||
-        message.text.length > 500
-    ) {
-        console.log('Rejected invalid test message:', message);
-
-        console.log('Game ID:', message?.gameId);
-console.log('Game ID valid:', Number.isSafeInteger(Number(message?.gameId)) && Number(message?.gameId) > 0);
-console.log('Text is string:', typeof message?.text === 'string');
-console.log('Text is not empty:', typeof message?.text === 'string' && message.text.trim().length > 0);
-console.log('Text under 500 characters:', typeof message?.text === 'string' && message.text.length <= 500);
-        return;
-    }
-
-    const gameId = Number(message.gameId);
-
-    // Verify that the sender belongs to this game.
-    db.query(
-        'SELECT player_id FROM `Player` WHERE user_id = ? AND game_id = ?',
-        [socket.data.userId, gameId],
-        (err, players) => {
-            if (err) {
-                console.error('Verify message sender error:', err);
-                return;
-            }
-
-            if (players.length === 0) {
-                console.log(
-                    `Rejected message: user ${socket.data.userId} is not in game ${gameId}`
-                );
-                return;
-            }
-
-            // Send the message only to the verified game's room.
-            io.to(`game:${gameId}`).emit(
-                'test-message',
-                message.text.trim()
-            );
-
-            console.log(
-                `User ${socket.data.userId} sent a message to game ${gameId}`
-            );
-        }
-    );
-});
-
     socket.on('disconnect', () => {
         console.log('A player disconnected:', socket.id);
     });
 });
+
 
 server.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);

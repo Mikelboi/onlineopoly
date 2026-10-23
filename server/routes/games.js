@@ -4,6 +4,10 @@ const {
     calculateNewPosition
 } = require('../gameplay/movement');
 
+const {
+    updatePlayerMoney
+} = require('../gameplay/money');
+
 function handleGameRequest(req, res, {
     db,
     sessions,
@@ -510,34 +514,46 @@ function handleGameRequest(req, res, {
                         return;
                     }
 
-                    db.query(
-                        `UPDATE Player
-                         SET token_type = ?
-                         WHERE player_id = ? AND game_id = ?`,
-                        [tokenType, players[0].player_id, gameId],
-                        updateErr => {
-                            if (updateErr) {
-                                console.error(
-                                    'Save token error:',
-                                    updateErr
-                                );
-                                sendJson(res, 500, {
-                                    message: 'Could not save your token.'
+                 db.query(
+                    `UPDATE Player
+                    SET token_type = ?, token_locked = 1
+                    WHERE player_id = ?
+                    AND game_id = ?
+                    AND token_locked = 0`,
+                    [tokenType, players[0].player_id, gameId],
+                    (updateErr, result) => {
+                        if (updateErr) {
+
+                             if (updateErr.code === 'ER_DUP_ENTRY') {
+                                sendJson(res, 409, {
+                                    message: 'That token has already been chosen in this game.'
                                 });
                                 return;
                             }
-
-                            sendJson(res, 200, {
-                                message: 'Token saved successfully!',
-                                tokenType
+                            console.error('Save token error:', updateErr);
+                            sendJson(res, 500, {
+                                message: 'Could not save your token.'
                             });
+                            return;
                         }
-                    );
-                }
-            );
-        });
 
-        return true;
+                        if (result.affectedRows === 0) {
+                            sendJson(res, 409, {
+                                message: 'You have already chosen your token.'
+                            });
+                            return;
+                        }
+
+                        sendJson(res, 200, {
+                            message: 'Token saved successfully!',
+                            tokenType
+                        });
+                    }
+                );   
+            }
+        );
+    });
+    return true;
     }
 
     // ROLL DICE AND MOVE PLAYER
@@ -650,22 +666,52 @@ function handleGameRequest(req, res, {
                                         return;
                                     }
 
+                                    const oldPosition = Number(player.position);
+                                const passedGo = newPosition < oldPosition;
+                                console.log('GO reward check:', {
+                                    oldPosition,
+                                    newPosition,
+                                    passedGo,
+                                    playerId: player.player_id
+                                });
+
+                                const finishRoll = () => {
                                     if (io) {
-                                            io.to(`game-${gameId}`).emit('playerMoved', {
-                                                gameId,
-                                                playerId: player.player_id,
-                                                oldPosition: Number(player.position),
-                                                newPosition,
-                                                dice
+                                        io.to(`game:${gameId}`).emit('playerMoved', {
+                                            gameId,
+                                            playerId: player.player_id,
+                                            oldPosition,
+                                            newPosition,
+                                            dice
+                                        });
+                                    }
+
+                                    sendJson(res, 200, {
+                                        message: passedGo
+                                            ? 'Dice rolled successfully! You passed GO and collected $200.'
+                                            : 'Dice rolled successfully!',
+                                        dice,
+                                        oldPosition,
+                                        newPosition,
+                                        passedGo
+                                    });
+                                };
+
+                                if (passedGo) {
+                                    updatePlayerMoney(db, Number(player.player_id), 200, moneyErr => {
+                                        if (moneyErr) {
+                                            console.error('GO reward error:', moneyErr);
+                                            sendJson(res, 500, {
+                                                message: 'Movement succeeded, but the GO reward failed.'
                                             });
+                                            return;
                                         }
 
-                                        sendJson(res, 200, {
-                                            message: 'Dice rolled successfully!',
-                                            dice,
-                                            oldPosition: Number(player.position),
-                                            newPosition
-                                        });
+                                        finishRoll();
+                                    });
+                                } else {
+                                    finishRoll();
+                                }
                                 }
                             );
                         }

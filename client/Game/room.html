@@ -293,7 +293,7 @@
     socket.on('connect', () => {
         console.log('Socket connected successfully:', socket.id);
         console.log('Joining game:', gameId);
-        socket.emit('join-game', gameId);
+        socket.emit('joinGame', gameId);
     });
 
     socket.on('disconnect', () => {
@@ -310,7 +310,7 @@
         }
 
         window.location.href =
-            `/board?gameId=${encodeURIComponent(data.gameId)}`;
+             `/token-selection?gameId=${encodeURIComponent(data.gameId)}`;
     });
 
 
@@ -532,7 +532,7 @@ buildBoard();
         roomMessageElement.textContent =
             data.message || 'Game started successfully!';
 
-            window.location.href = `/board?gameId=${encodeURIComponent(gameId)}`;
+            window.location.href = `/token-selection?gameId=${encodeURIComponent(gameId)}`;
     } catch (error) {
         console.error('Error starting game:', error);
         roomMessageElement.textContent = error.message;
