@@ -1,8 +1,4 @@
 
-//console.log('DB_HOST loaded:', !!process.env.DB_HOST);
-//console.log('DB_USER loaded:', process.env.DB_USER || '(missing)');
-//console.log('DB_PASSWORD loaded:', !!process.env.DB_PASSWORD);
-
 const mysql = require('mysql2');
 const path = require('path');
 require('dotenv').config({

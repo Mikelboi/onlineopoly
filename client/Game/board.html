@@ -684,6 +684,51 @@
             transform: rotate(-35deg);
         }
 
+        #property-purchase-menu {
+            position: absolute;
+            z-index: 20;
+            width: min(320px, 85%);
+            padding: 20px;
+            box-sizing: border-box;
+            background: #fffdf3;
+            border: 3px solid #238636;
+            border-radius: 14px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+            text-align: center;
+        }
+
+        #property-purchase-menu[hidden] {
+            display: none;
+        }
+
+        #property-purchase-menu h2 {
+            margin: 0 0 8px;
+            color: #238636;
+            font-size: 22px;
+        }
+
+        #property-purchase-menu p {
+            margin: 8px 0 14px;
+        }
+
+        #property-purchase-menu button {
+            margin: 5px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 7px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #buy-property-button {
+            background: #238636;
+        }
+
+        #auction-property-button {
+            background: #b7791f;
+        }
+
         /* Color definitions for property bars */
         .color-brown { background-color: #955436; }
         .color-light-blue { background-color: #aae0fa; }
@@ -723,18 +768,18 @@
         }
 
 
-#toggle-token-picker {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 1001;
-    padding: 8px 12px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    background: white;
-    color: #222;
-    cursor: pointer;
-}
+        #toggle-token-picker {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 1001;
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background: white;
+            color: #222;
+            cursor: pointer;
+        }
 
         #token-picker {
             position: fixed;
@@ -1032,8 +1077,20 @@
         <div class="game-board" id="game-board">
             <div class="board-center">
                 <h2 class="center-logo">ONLINEOPOLY</h2>
-            </div>
-        </div>
+            <div id="property-purchase-menu" hidden>
+        <h2 id="purchase-property-name"></h2>
+        <p id="purchase-property-price"></p>
+        <p>Would you like to buy this property?</p>
+
+        <button id="buy-property-button" type="button">
+            Buy
+        </button>
+
+        <button id="auction-property-button" type="button">
+            Auction
+        </button>
+    </div>
+</div>
     </section>
 
 </div>
@@ -1089,7 +1146,14 @@
         const rollDiceButton = document.getElementById('rollDiceButton');
         const diceResult = document.getElementById('diceResult');
         let isRolling = false;
-                
+
+        const propertyPurchaseMenu = document.getElementById('property-purchase-menu');
+        const purchasePropertyName = document.getElementById('purchase-property-name');
+        const purchasePropertyPrice = document.getElementById('purchase-property-price');
+
+        const buyPropertyButton = document.getElementById('buy-property-button');
+        const auctionPropertyButton = document.getElementById('auction-property-button');
+                        
 
         async function rollDice() {
             if (isRolling) return;
@@ -1121,7 +1185,10 @@
         }
 
         diceResult.textContent = `You rolled a ${data.dice.total} `;
-        await loadPlayerTokens();
+        const gameData = await loadPlayerTokens();
+        if (gameData) {
+            showPropertyPurchaseMenu(data.newPosition, gameData);
+        }
     } catch (error) {
         diceResult.textContent = error.message;
     } finally {
@@ -1133,6 +1200,60 @@
 
     document.getElementById('game-board')
         .addEventListener('click', rollDice);
+
+    buyPropertyButton.addEventListener('click', async (event) => {
+    // Prevent this click from triggering another dice roll.
+    event.stopPropagation();
+
+    if (!gameId) {
+        diceResult.textContent = 'Game ID is missing.';
+        return;
+    }
+
+    buyPropertyButton.disabled = true;
+    auctionPropertyButton.disabled = true;
+    diceResult.textContent = 'Purchasing property...';
+
+    try {
+        const response = await fetch('/games/buy-property', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameId: Number(gameId)
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.message || 'Could not purchase property.'
+            );
+        }
+
+        // Purchase succeeded.
+        propertyPurchaseMenu.hidden = true;
+        diceResult.textContent = data.message;
+
+        // Refresh player balances and token positions.
+        await loadPlayerTokens();
+
+    } catch (error) {
+        diceResult.textContent = error.message;
+    } finally {
+        buyPropertyButton.disabled = false;
+        auctionPropertyButton.disabled = false;
+    }
+});
+
+auctionPropertyButton.addEventListener('click', (event) => {
+    event.stopPropagation();
+
+    diceResult.textContent =
+        'Auction functionality has not been implemented yet.';
+});
         /* ========================================
            11. BOARD SPACE DATA
         ======================================== */
@@ -1186,6 +1307,42 @@
             { name: "Luxury Tax", type: "special", text: "PAY $75.00" },
             { name: "Boardwalk", color: "#1134A6", price: 400 }
         ];
+
+    function showPropertyPurchaseMenu(position, gameData) {
+    const space = boardSpaces[position];
+
+    // Hide the menu if this is not a purchasable space.
+    if (!space || space.price === undefined) {
+        propertyPurchaseMenu.hidden = true;
+        return;
+    }
+
+    // Find this property's database record by its name.
+    const property = gameData.properties.find(
+        item => item.property_name === space.name
+    );
+
+    // If the property isn't in the database, don't offer a purchase.
+    if (!property) {
+        propertyPurchaseMenu.hidden = true;
+        return;
+    }
+
+    // Check whether its owner is one of this game's players.
+    const isOwned = gameData.players.some(
+        player =>
+            Number(player.player_id) === Number(property.player_id)
+    );
+
+    if (isOwned) {
+        propertyPurchaseMenu.hidden = true;
+        return;
+    }
+
+    purchasePropertyName.textContent = space.name;
+    purchasePropertyPrice.textContent = `Price: $${space.price}`;
+    propertyPurchaseMenu.hidden = false;
+}
 
         /* ========================================
            12. CREATE AND POSITION BOARD SPACES
@@ -1492,6 +1649,7 @@
 
                 placePlayerTokens(data.players);
                 displayPlayerCards(data.players);
+                return data;
             } catch (error) {
                 console.error("Error loading player tokens:", error);
             }
