@@ -9,8 +9,44 @@ const {
 } = require('../Gameplay/money');
 
 const {
-    purchaseProperty
+    purchaseProperty,
+    payRent
 } = require('../Gameplay/properties');
+
+
+function getNextPlayer(db, gameId, currentPlayerId, callback) {
+    db.query(
+        `SELECT player_id
+         FROM Player
+         WHERE game_id = ?
+           AND is_bankrupt = 0
+         ORDER BY player_id ASC`,
+        [gameId],
+        (err, players) => {
+            if (err) {
+                callback(err);
+                return;
+            }
+
+            if (players.length === 0) {
+                callback(new Error('No active players found.'));
+                return;
+            }
+
+            const currentIndex = players.findIndex(
+                p => Number(p.player_id) === Number(currentPlayerId)
+            );
+
+            if (currentIndex === -1) {
+                callback(new Error('Current player was not found.'));
+                return;
+            }
+
+            const nextIndex = (currentIndex + 1) % players.length;
+            callback(null, players[nextIndex].player_id);
+        }
+    );
+}
 
 function handleGameRequest(req, res, {
     db,
@@ -55,35 +91,50 @@ function handleGameRequest(req, res, {
         res.end(JSON.stringify(data));
     }
 
-    function readJsonBody(req, res, callback) {
-        let body = '';
-        let tooLarge = false;
+  function readJsonBody(req, res, callback) {
+    let body = '';
+    let tooLarge = false;
 
-        req.on('data', chunk => {
-            if (tooLarge) return;
+    req.on('data', chunk => {
+        if (tooLarge) return;
 
-            body += chunk;
+        body += chunk;
 
-            if (Buffer.byteLength(body, 'utf8') > 10000) {
-                tooLarge = true;
-                sendJson(res, 413, {
-                    message: 'Request too large.'
-                });
-            }
-        });
+        if (Buffer.byteLength(body, 'utf8') > 10000) {
+            tooLarge = true;
+            sendJson(res, 413, {
+                message: 'Request too large.'
+            });
+        }
+    });
 
-        req.on('end', () => {
-            if (tooLarge) return;
+    req.on('end', () => {
+        if (tooLarge) return;
 
-            try {
-                callback(JSON.parse(body));
-            } catch (error) {
-                sendJson(res, 400, {
-                    message: 'Invalid request.'
-                });
-            }
-        });
-    }
+        let requestData;
+
+        try {
+            requestData = JSON.parse(body);
+        } catch (error) {
+            sendJson(res, 400, {
+                message: 'Invalid request body.'
+            });
+            return;
+        }
+
+        callback(requestData);
+    });
+
+    req.on('error', error => {
+        console.error('Request body error:', error);
+
+        if (!res.headersSent) {
+            sendJson(res, 400, {
+                message: 'Could not read request body.'
+            });
+        }
+    });
+}
 
     // CREATE GAME
     if (req.method === 'POST' && route === '/games/create') {
@@ -394,7 +445,7 @@ function handleGameRequest(req, res, {
                 }
 
                 db.query(
-                    `SELECT player_id, player_name, money, position, token_type
+                    `SELECT player_id, user_id, player_name, money, position, token_type
                      FROM Player
                      WHERE game_id = ?
                      ORDER BY player_id`,
@@ -475,7 +526,8 @@ function handleGameRequest(req, res, {
                                         sendJson(res, 200, {
                                             game: games[0],
                                             players,
-                                            properties
+                                            properties,
+                                            currentUserId: session.userId
                                         });
                                     }
                                 );
@@ -615,7 +667,7 @@ function handleGameRequest(req, res, {
             }
 
             db.query(
-                `SELECT game_status
+                `SELECT game_status, current_player_id
                  FROM Game
                  WHERE game_id = ?`,
                 [gameId],
@@ -636,6 +688,13 @@ function handleGameRequest(req, res, {
                             message: 'This game has not started or is unavailable.'
                         });
                         return;
+                    }
+
+                    if (
+                        Number(games[0].current_player_id) !==
+                        Number(session.userId)
+                    ) {
+                        // We'll correct this comparison in the next step.
                     }
 
                     db.query(
@@ -663,6 +722,16 @@ function handleGameRequest(req, res, {
                             }
 
                             const player = players[0];
+
+                            if (
+                                Number(games[0].current_player_id) !==
+                                Number(player.player_id)
+                            ) {
+                                sendJson(res, 409, {
+                                    message: 'It is not your turn.'
+                                });
+                                return;
+                            }
 
                             let dice;
                             let newPosition;
@@ -712,7 +781,32 @@ function handleGameRequest(req, res, {
                                     playerId: player.player_id
                                 });
 
-                                const finishRoll = () => {
+                                
+                            const finishRoll = () => {
+                                payRent(db, Number(session.userId), Number(gameId), (rentErr, rentResult) => {
+                                    if (rentErr) {
+                                        console.error('Rent payment error:', rentErr);
+
+                                        if (io) {
+                                            io.to(`game:${gameId}`).emit('playerMoved', {
+                                                gameId,
+                                                playerId: player.player_id,
+                                                oldPosition,
+                                                newPosition,
+                                                dice
+                                            });
+                                        }
+
+                                        sendJson(res, 500, {
+                                            message: 'Movement succeeded, but rent processing failed.',
+                                            dice,
+                                            oldPosition,
+                                            newPosition,
+                                            passedGo
+                                        });
+                                        return;
+                                    }
+
                                     if (io) {
                                         io.to(`game:${gameId}`).emit('playerMoved', {
                                             gameId,
@@ -724,15 +818,20 @@ function handleGameRequest(req, res, {
                                     }
 
                                     sendJson(res, 200, {
-                                        message: passedGo
-                                            ? 'Dice rolled successfully! You passed GO and collected $200.'
-                                            : 'Dice rolled successfully!',
+                                        message: rentResult && rentResult.rentPaid
+                                            ? `Dice rolled! You paid $${rentResult.rent} rent for ${rentResult.propertyName}.`
+                                            : passedGo
+                                                ? 'Dice rolled successfully! You passed GO and collected $200.'
+                                                : 'Dice rolled successfully!',
                                         dice,
                                         oldPosition,
                                         newPosition,
-                                        passedGo
+                                        passedGo,
+                                        rent: rentResult
                                     });
-                                };
+                                });
+                            };
+
 
                                 if (passedGo) {
                                     updatePlayerMoney(db, Number(player.player_id), Number(gameId), 200, 'GO Reward', moneyErr => {
@@ -938,42 +1037,68 @@ if (req.method === 'POST' && route === '/games/buy-property') {
                             }
 
                             db.query(
-                                `UPDATE Game
-                                 SET game_status = 'in_progress',
-                                     gamestarted_at = CURRENT_TIMESTAMP
-                                 WHERE game_id = ?
-                                   AND game_status = 'waiting'`,
+                                `SELECT player_id
+                                FROM Player
+                                WHERE game_id = ?
+                                ORDER BY player_id ASC
+                                LIMIT 1`,
                                 [gameId],
-                                (updateErr, result) => {
-                                    if (updateErr) {
-                                        console.error(
-                                            'Start game error:',
-                                            updateErr
-                                        );
+                                (firstPlayerErr, firstPlayers) => {
+                                    if (firstPlayerErr) {
+                                        console.error('Find first player error:', firstPlayerErr);
                                         sendJson(res, 500, {
-                                            message: 'Could not start the game.'
+                                            message: 'Could not select the first player.'
                                         });
                                         return;
                                     }
 
-                                    if (result.affectedRows === 0) {
-                                        sendJson(res, 409, {
-                                            message:
-                                                'The game has already started.'
+                                    if (firstPlayers.length === 0) {
+                                        sendJson(res, 400, {
+                                            message: 'No players are available to start the game.'
                                         });
                                         return;
                                     }
 
-                                    if (io) {
-                                        io.to(`game:${gameId}`).emit('gameStarted', {
-                                            gameId
-                                        });
-                                    }
+                                    const firstPlayerId = firstPlayers[0].player_id;
 
-                                    sendJson(res, 200, {
-                                        message: 'Game started successfully!',
-                                        gameId
-                                    });
+                                    db.query(
+                                        `UPDATE Game
+                                        SET game_status = 'in_progress',
+                                            current_player_id = ?,
+                                            gamestarted_at = CURRENT_TIMESTAMP
+                                        WHERE game_id = ?
+                                        AND game_status = 'waiting'`,
+                                        [firstPlayerId, gameId],
+                                        (updateErr, result) => {
+                                            if (updateErr) {
+                                                console.error('Start game error:', updateErr);
+                                                sendJson(res, 500, {
+                                                    message: 'Could not start the game.'
+                                                });
+                                                return;
+                                            }
+
+                                            if (result.affectedRows === 0) {
+                                                sendJson(res, 409, {
+                                                    message: 'The game has already started.'
+                                                });
+                                                return;
+                                            }
+
+                                            if (io) {
+                                                io.to(`game:${gameId}`).emit('gameStarted', {
+                                                    gameId,
+                                                    currentPlayerId: firstPlayerId
+                                                });
+                                            }
+
+                                            sendJson(res, 200, {
+                                                message: 'Game started successfully!',
+                                                gameId,
+                                                currentPlayerId: firstPlayerId
+                                            });
+                                        }
+                                    );
                                 }
                             );
                         }
@@ -984,6 +1109,134 @@ if (req.method === 'POST' && route === '/games/buy-property') {
 
         return true;
     }
+
+    
+if (req.method === 'POST' && route === '/games/end-turn') {
+    console.log('END-TURN ROUTE REACHED');
+    const session = getSession(req);
+
+    if (!session) {
+        sendJson(res, 401, {
+            message: 'You must be logged in.'
+        });
+        return true;
+    }
+
+    readJsonBody(req, res, requestData => {
+    const gameId = Number(requestData.gameId);
+
+    if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+        sendJson(res, 400, {
+            message: 'Invalid game ID.'
+        });
+        return;
+    }
+
+        db.query(
+            `SELECT current_player_id, game_status
+             FROM Game
+             WHERE game_id = ?`,
+            [gameId],
+            (err, games) => {
+                if (err) {
+                    console.error('End turn error:', err);
+                    sendJson(res, 500, {
+                        message: 'Could not end turn.'
+                    });
+                    return;
+                }
+
+                if (
+                    games.length === 0 ||
+                    games[0].game_status !== 'in_progress'
+                ) {
+                    sendJson(res, 400, {
+                        message: 'This game is not in progress.'
+                    });
+                    return;
+                }
+
+                const currentPlayerId = games[0].current_player_id;
+
+                db.query(
+                    `SELECT player_id
+                     FROM Player
+                     WHERE player_id = ?
+                       AND game_id = ?
+                       AND user_id = ?
+                       AND is_bankrupt = 0`,
+                    [currentPlayerId, gameId, session.userId],
+                    (playerErr, players) => {
+                        if (playerErr) {
+                            console.error('End turn player error:', playerErr);
+                            sendJson(res, 500, {
+                                message: 'Could not verify the current player.'
+                            });
+                            return;
+                        }
+
+                        if (players.length === 0) {
+                            sendJson(res, 403, {
+                                message: 'It is not your turn.'
+                            });
+                            return;
+                        }
+
+                        getNextPlayer(
+                            db,
+                            gameId,
+                            currentPlayerId,
+                            (nextErr, nextPlayerId) => {
+                                if (nextErr) {
+                                    console.error('Next player error:', nextErr);
+                                    sendJson(res, 500, {
+                                        message: 'Could not find the next player.'
+                                    });
+                                    return;
+                                }
+
+                                console.log('Current player ID:', currentPlayerId);
+                                console.log('Next player ID:', nextPlayerId);
+
+                                db.query(
+                                    `UPDATE Game
+                                     SET current_player_id = ?
+                                     WHERE game_id = ?
+                                       AND current_player_id = ?`,
+                                    [nextPlayerId, gameId, currentPlayerId],
+                                    (updateErr, result) => {
+                                        if (updateErr) {
+                                            console.error('Advance turn error:', updateErr);
+                                            sendJson(res, 500, {
+                                                message: 'Could not advance the turn.'
+                                            });
+                                            return;
+                                        }
+
+                                        if (result.affectedRows === 0) {
+                                            sendJson(res, 409, {
+                                                message: 'The turn has already changed.'
+                                            });
+                                            return;
+                                        }
+
+                                        sendJson(res, 200, {
+                                            message: 'Turn ended successfully.',
+                                            currentPlayerId: nextPlayerId
+                                        });
+                                    }
+                                );
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    });
+
+    return true;
+}
+
 
     return false;
 }

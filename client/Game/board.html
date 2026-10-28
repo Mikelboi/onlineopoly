@@ -80,13 +80,12 @@
             min-height: 0;
             padding: 12px;
             box-sizing: border-box;
-            transform: translateY(250px);
         }
 
         #game-board {
             grid-column: 2;
             grid-row: 1 / 4;
-            transform: translateY(5px);
+            transform: translateY(250px);
         }
 
         .player-card {
@@ -98,6 +97,7 @@
             border-radius: 10px;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
             overflow-wrap: anywhere;
+            transform: translateY(250px);
         }
 
         .player-card h3 {
@@ -116,7 +116,7 @@
             grid-row: 1;
             justify-self: start;
             align-self: start;
-            transform: translateY(-250px);
+            transform: translateY(0px);
         }
 
         #player-card-2 {
@@ -124,7 +124,7 @@
             grid-row: 1;
             justify-self: end;
             align-self: start;
-            transform: translateY(-250px);
+            transform: translateY(0px);
         }
 
         #player-card-3 {
@@ -132,6 +132,7 @@
             grid-row: 3;
             justify-self: start;
             align-self: end;
+            transform: translateY(0px);
         }
 
         #player-card-4 {
@@ -139,6 +140,7 @@
             grid-row: 3;
             justify-self: end;
             align-self: end;
+            transform: translateY(0px);
         }
 
         @media (max-width: 700px) {
@@ -691,7 +693,7 @@
             padding: 20px;
             box-sizing: border-box;
             background: #fffdf3;
-            border: 3px solid #238636;
+            border: 3px solid #236b86;
             border-radius: 14px;
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
             text-align: center;
@@ -703,7 +705,7 @@
 
         #property-purchase-menu h2 {
             margin: 0 0 8px;
-            color: #238636;
+            color: #fca37c;
             font-size: 22px;
         }
 
@@ -722,12 +724,60 @@
         }
 
         #buy-property-button {
-            background: #238636;
+            background: #328623;
         }
 
         #auction-property-button {
-            background: #b7791f;
+            background: #b73d1f;
         }
+
+        
+        /* Rent popup */
+        #rent-popup[hidden] {
+            display: none;
+        }
+
+        #rent-popup {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.65);
+        }
+
+        .rent-popup-content {
+            width: min(90%, 360px);
+            padding: 28px;
+            text-align: center;
+            background: white;
+            border: 5px solid #222;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .rent-popup-content h2 {
+            color: #f48859;
+            margin-top: 0;
+        }
+
+        #rent-popup-amount {
+            font-size: 28px;
+            font-weight: bold;
+            color: #f48859;
+        }
+
+        #rent-popup-continue {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: #f48859;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
 
         /* Color definitions for property bars */
         .color-brown { background-color: #955436; }
@@ -1080,7 +1130,7 @@
             <div id="property-purchase-menu" hidden>
         <h2 id="purchase-property-name"></h2>
         <p id="purchase-property-price"></p>
-        <p>Would you like to buy this property?</p>
+        <p>Do you want to purchase this?</p>
 
         <button id="buy-property-button" type="button">
             Buy
@@ -1090,10 +1140,21 @@
             Auction
         </button>
     </div>
-</div>
-    </section>
+        <div id="rent-popup" hidden>
+                <div class="rent-popup-content">
+                    <h2>Pay up Bub!</h2>
+                    <p id="rent-popup-property"></p>
+                    <p id="rent-popup-amount"></p>
+                    <p id="rent-popup-owner"></p>
 
-</div>
+                    <button id="rent-popup-continue" type="button">
+                        Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+        </div>
+        </section>
    
     </section>
     <h1></h1>
@@ -1156,7 +1217,16 @@
                         
 
         async function rollDice() {
-            if (isRolling) return;
+        if (isRolling) return;
+
+        if (
+            !propertyPurchaseMenu.hidden ||
+            !document.getElementById('rent-popup').hidden
+        ) {
+            return;
+        }
+
+        isRolling = true;
             rollDiceButton.disabled = true;
             diceResult.textContent = 'Rolling dice...';
 
@@ -1184,18 +1254,55 @@
             throw new Error(data.message || 'Could not roll dice.');
         }
 
-        diceResult.textContent = `You rolled a ${data.dice.total} `;
+       
+        diceResult.textContent = `You rolled a ${data.dice.total}`;
+
         const gameData = await loadPlayerTokens();
+
         if (gameData) {
-            showPropertyPurchaseMenu(data.newPosition, gameData);
+            if (data.rent && data.rent.rentPaid) {
+                showRentPopup(data.rent);
+            } else {
+                const purchaseMenu = document.getElementById('property-purchase-menu');
+
+                showPropertyPurchaseMenu(data.newPosition, gameData);
+
+                if (purchaseMenu.hidden) {
+                    await endTurn();
+                }
+            }
         }
+
     } catch (error) {
         diceResult.textContent = error.message;
     } finally {
         isRolling = false;
-        rollDiceButton.disabled = false;
+         await loadPlayerTokens();
     }
 };
+
+async function endTurn() {
+    try {
+        const response = await fetch('/games/end-turn', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ gameId })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || 'Could not end the turn.');
+        }
+
+        console.log('Next player:', data.currentPlayerId);
+    } catch (error) {
+        console.error('End turn error:', error);
+        alert(error.message);
+    }
+}
     rollDiceButton.addEventListener('click', rollDice);
 
     document.getElementById('game-board')
@@ -1239,6 +1346,7 @@
 
         // Refresh player balances and token positions.
         await loadPlayerTokens();
+        await endTurn();
 
     } catch (error) {
         diceResult.textContent = error.message;
@@ -1342,7 +1450,71 @@ auctionPropertyButton.addEventListener('click', (event) => {
     purchasePropertyName.textContent = space.name;
     purchasePropertyPrice.textContent = `Price: $${space.price}`;
     propertyPurchaseMenu.hidden = false;
+    rollDiceButton.disabled = true;
+
 }
+
+    
+    function showRentPopup(rent) {
+        const popup = document.getElementById('rent-popup');
+
+        document.getElementById('rent-popup-property').textContent =
+            `You landed on ${rent.propertyName}.`;
+
+        document.getElementById('rent-popup-amount').textContent =
+            `Rent: $${rent.rent}`;
+
+        document.getElementById('rent-popup-owner').textContent =
+            `Owned by ${rent.ownerPlayerName}`;
+
+        popup.hidden = false;
+        rollDiceButton.disabled = true;
+    }
+
+
+    document.getElementById('rent-popup-continue')
+    .addEventListener('click', async () => {
+        const popup = document.getElementById('rent-popup');
+        const continueButton = document.getElementById('rent-popup-continue');
+
+        // Prevent duplicate clicks while ending the turn.
+        continueButton.disabled = true;
+        rollDiceButton.disabled = true;
+
+        try {
+            const response = await fetch('/games/end-turn', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ gameId })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Could not end the turn.');
+            }
+
+            popup.hidden = true;
+
+            console.log('Next player:', data.currentPlayerId);
+
+            // Refresh the board so the next player's turn is reflected.
+            await loadPlayerTokens();
+
+        } catch (error) {
+            console.error('End turn error:', error);
+            alert(error.message || 'Could not connect to the server.');
+
+            // Keep the popup visible so the player can retry.
+            popup.hidden = false;
+
+        } finally {
+            continueButton.disabled = false;
+        }
+    });
+
 
         /* ========================================
            12. CREATE AND POSITION BOARD SPACES
@@ -1629,7 +1801,7 @@ auctionPropertyButton.addEventListener('click', (event) => {
 
         async function loadPlayerTokens() {
             const params = new URLSearchParams(window.location.search);
-            const gameId = params.get("gameId");
+            const gameId = params.get("gameId") || document.body.dataset.gameId;
 
             if (!gameId) {
                 console.error("Missing gameId in URL.");
@@ -1649,6 +1821,28 @@ auctionPropertyButton.addEventListener('click', (event) => {
 
                 placePlayerTokens(data.players);
                 displayPlayerCards(data.players);
+                const currentPlayerId = Number(data.game.current_player_id);
+
+                const myPlayer = data.players.find(
+                    player => Number(player.user_id) === Number(data.currentUserId)
+                );
+
+                const popupOpen =
+                    !propertyPurchaseMenu.hidden ||
+                    !document.getElementById('rent-popup').hidden;
+
+                console.log('Property menu hidden:', propertyPurchaseMenu.hidden);
+                console.log(
+                    'Rent popup hidden:',
+                    document.getElementById('rent-popup').hidden
+                );
+                console.log('Is roll disabled?', rollDiceButton.disabled);
+
+                rollDiceButton.disabled =
+                    !myPlayer ||
+                    Number(myPlayer.player_id) !== currentPlayerId ||
+                    popupOpen;
+
                 return data;
             } catch (error) {
                 console.error("Error loading player tokens:", error);
