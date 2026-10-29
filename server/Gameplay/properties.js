@@ -21,7 +21,7 @@ function purchaseProperty(db, userId, gameId, callback) {
         };
 
         db.query(
-            `SELECT player_id, position, money
+            `SELECT player_id, player_name, position, money
              FROM Player
              WHERE user_id = ?
                AND game_id = ?
@@ -165,7 +165,8 @@ function purchaseProperty(db, userId, gameId, callback) {
                                                             callback(null, {
                                                                 propertyId: property.property_id,
                                                                 propertyName: property.property_name,
-                                                                price: Number(property.price)
+                                                                price: Number(property.price),
+                                                                playerName: player.player_name
                                                             });
                                                         });
                                                     }

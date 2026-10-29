@@ -48,6 +48,71 @@ function getNextPlayer(db, gameId, currentPlayerId, callback) {
     );
 }
 
+function advanceAuctionTurn(connection, gameId, startingPlayerId, callback) {
+    connection.query(
+        `SELECT current_player_id
+         FROM Game
+         WHERE game_id = ?
+           AND game_status = 'in_progress'
+         FOR UPDATE`,
+        [gameId],
+        (gameErr, games) => {
+            if (gameErr) {
+                callback(gameErr);
+                return;
+            }
+
+            if (games.length === 0) {
+                callback(new Error('Game is not in progress.'));
+                return;
+            }
+
+            const currentPlayerId = Number(games[0].current_player_id);
+
+            // Only advance if the auction starter still owns the turn.
+            if (currentPlayerId !== Number(startingPlayerId)) {
+                callback(null, false);
+                return;
+            }
+
+            getNextPlayer(
+                connection,
+                gameId,
+                startingPlayerId,
+                (nextErr, nextPlayerId) => {
+                    if (nextErr) {
+                        callback(nextErr);
+                        return;
+                    }
+
+                    connection.query(
+                        `UPDATE Game
+                         SET current_player_id = ?
+                         WHERE game_id = ?
+                           AND current_player_id = ?`,
+                        [nextPlayerId, gameId, startingPlayerId],
+                        (updateErr, result) => {
+                            if (updateErr) {
+                                callback(updateErr);
+                                return;
+                            }
+
+                            if (result.affectedRows !== 1) {
+                                callback(
+                                    new Error('Could not advance the auction turn.')
+                                );
+                                return;
+                            }
+
+                            callback(null, true);
+                        }
+                    );
+                }
+            );
+        }
+    );
+}
+
 function handleGameRequest(req, res, {
     db,
     sessions,
@@ -698,7 +763,7 @@ function handleGameRequest(req, res, {
                     }
 
                     db.query(
-                        `SELECT player_id, position
+                        `SELECT player_id, player_name, position
                          FROM Player
                          WHERE game_id = ? AND user_id = ?`,
                         [gameId, session.userId],
@@ -791,9 +856,11 @@ function handleGameRequest(req, res, {
                                             io.to(`game:${gameId}`).emit('playerMoved', {
                                                 gameId,
                                                 playerId: player.player_id,
+                                                playerName: player.player_name,
                                                 oldPosition,
                                                 newPosition,
-                                                dice
+                                                dice,
+                                                diceTotal: dice.total
                                             });
                                         }
 
@@ -811,9 +878,22 @@ function handleGameRequest(req, res, {
                                         io.to(`game:${gameId}`).emit('playerMoved', {
                                             gameId,
                                             playerId: player.player_id,
+                                            playerName: player.player_name,
                                             oldPosition,
                                             newPosition,
-                                            dice
+                                            dice,
+                                            diceTotal: dice.total
+                                        });
+                                    }
+
+                                    if (io && rentResult && rentResult.rentPaid) {
+                                        io.to(`game:${gameId}`).emit('rentPaid', {
+                                            gameId,
+                                            playerId: player.player_id,
+                                            playerName: player.player_name,
+                                            propertyName: rentResult.propertyName,
+                                            rent: rentResult.rent,
+                                            ownerPlayerName: rentResult.ownerPlayerName
                                         });
                                     }
 
@@ -852,6 +932,785 @@ function handleGameRequest(req, res, {
                             );
                         }
                     );
+                }
+            );
+        });
+
+        return true;
+    }
+
+    // START PROPERTY AUCTION
+    if (req.method === 'POST' && route === '/games/auction/start') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to start an auction.'
+            });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+
+            if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+                sendJson(res, 400, {
+                    message: 'Invalid game ID.'
+                });
+                return;
+            }
+
+            db.query(
+                `SELECT game_status, current_player_id
+                 FROM Game
+                 WHERE game_id = ?`,
+                [gameId],
+                (gameErr, games) => {
+                    if (gameErr) {
+                        console.error('Auction game lookup error:', gameErr);
+                        sendJson(res, 500, {
+                            message: 'Could not check the game.'
+                        });
+                        return;
+                    }
+
+                    if (
+                        games.length === 0 ||
+                        games[0].game_status !== 'in_progress'
+                    ) {
+                        sendJson(res, 409, {
+                            message: 'This game is not in progress.'
+                        });
+                        return;
+                    }
+
+                    db.query(
+                        `SELECT player_id, player_name, position
+                         FROM Player
+                         WHERE game_id = ?
+                           AND user_id = ?
+                           AND is_bankrupt = 0`,
+                        [gameId, session.userId],
+                        (playerErr, players) => {
+                            if (playerErr) {
+                                console.error('Auction player lookup error:', playerErr);
+                                sendJson(res, 500, {
+                                    message: 'Could not find your player.'
+                                });
+                                return;
+                            }
+
+                            if (players.length === 0) {
+                                sendJson(res, 403, {
+                                    message: 'You are not an active player in this game.'
+                                });
+                                return;
+                            }
+
+                            const player = players[0];
+
+                            if (
+                                Number(games[0].current_player_id) !==
+                                Number(player.player_id)
+                            ) {
+                                sendJson(res, 409, {
+                                    message: 'It is not your turn.'
+                                });
+                                return;
+                            }
+
+                            // Find the property at the player's current position.
+                            db.query(
+                                `SELECT property_id, property_name
+                                 FROM Property
+                                 WHERE board_position = ?`,
+                                [player.position],
+                                (propertyErr, properties) => {
+                                    if (propertyErr) {
+                                        console.error('Auction property lookup error:', propertyErr);
+                                        sendJson(res, 500, {
+                                            message: 'Could not find the property.'
+                                        });
+                                        return;
+                                    }
+
+                                    if (properties.length === 0) {
+                                        sendJson(res, 409, {
+                                            message: 'There is no property to auction at this position.'
+                                        });
+                                        return;
+                                    }
+
+                                    const property = properties[0];
+
+                                    db.query(
+                                        `SELECT Player_Property.player_id
+                                         FROM Player_Property
+                                         JOIN Player
+                                           ON Player.player_id = Player_Property.player_id
+                                         WHERE Player_Property.property_id = ?
+                                           AND Player.game_id = ?`,
+                                        [property.property_id, gameId],
+                                        (ownerErr, owners) => {
+                                            if (ownerErr) {
+                                                console.error('Auction ownership lookup error:', ownerErr);
+                                                sendJson(res, 500, {
+                                                    message: 'Could not check property ownership.'
+                                                });
+                                                return;
+                                            }
+
+                                            if (owners.length > 0) {
+                                                sendJson(res, 409, {
+                                                    message: 'This property is already owned.'
+                                                });
+                                                return;
+                                            }
+
+                                            db.query(
+                                                `SELECT auction_id
+                                                 FROM Property_Auction
+                                                 WHERE game_id = ?
+                                                   AND auction_status = 'open'`,
+                                                [gameId],
+                                                (auctionErr, openAuctions) => {
+                                                    if (auctionErr) {
+                                                        console.error('Open auction lookup error:', auctionErr);
+                                                        sendJson(res, 500, {
+                                                            message: 'Could not check active auctions.'
+                                                        });
+                                                        return;
+                                                    }
+
+                                                    if (openAuctions.length > 0) {
+                                                        sendJson(res, 409, {
+                                                            message: 'An auction is already open in this game.'
+                                                        });
+                                                        return;
+                                                    }
+
+                                                    db.query(
+                                                        `INSERT INTO Property_Auction
+                                                            (game_id, property_id, starting_player_id,
+                                                            highest_bid, highest_bidder_id,
+                                                            auction_status, ends_at)
+                                                        VALUES (?, ?, ?, 0, NULL, 'open',
+                                                                DATE_ADD(NOW(), INTERVAL 30 SECOND))`,
+                                                        [gameId, property.property_id, player.player_id],
+                                                        (insertErr, result) => {
+                                                            if (insertErr) {
+                                                                console.error('Create auction error:', insertErr);
+                                                                sendJson(res, 500, {
+                                                                    message: 'Could not start the auction.'
+                                                                });
+                                                                return;
+                                                            }
+
+                                                            
+                                                            if (io) {
+                                                                io.to(`game:${gameId}`).emit('auctionStarted', {
+                                                                    gameId,
+                                                                    auctionId: result.insertId,
+                                                                    propertyId: property.property_id,
+                                                                    propertyName: property.property_name,
+                                                                    startingPlayerId: player.player_id,
+                                                                    endsAt: new Date(Date.now() + 30000).toISOString()
+                                                                });
+                                                            }
+
+
+                                                            sendJson(res, 201, {
+                                                                message: 'Auction started successfully!',
+                                                                auctionId: result.insertId,
+                                                                propertyId: property.property_id,
+                                                                propertyName: property.property_name,
+                                                                endsAt: new Date(Date.now() + 30000).toISOString()
+                                                            });
+                                                        }
+                                                    );
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+        });
+
+        return true;
+    }
+
+    
+    // PLACE AUCTION BID
+    if (req.method === 'POST' && route === '/games/auction/bid') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to bid.'
+            });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+            const auctionId = Number(requestData.auctionId);
+            const bid = Number(requestData.bid);
+
+            if (
+                !Number.isSafeInteger(gameId) ||
+                gameId <= 0 ||
+                !Number.isSafeInteger(auctionId) ||
+                auctionId <= 0 ||
+                !Number.isFinite(bid) ||
+                bid <= 0 ||
+                Math.round(bid * 100) !== bid * 100
+            ) {
+                sendJson(res, 400, {
+                    message: 'Enter a valid game, auction, and bid amount.'
+                });
+                return;
+            }
+
+            db.query(
+                `SELECT player_id, player_name, money
+                 FROM Player
+                 WHERE game_id = ?
+                   AND user_id = ?
+                   AND is_bankrupt = 0`,
+                [gameId, session.userId],
+                (playerErr, players) => {
+                    if (playerErr) {
+                        console.error('Auction bidder lookup error:', playerErr);
+                        sendJson(res, 500, {
+                            message: 'Could not find your player.'
+                        });
+                        return;
+                    }
+
+                    if (players.length === 0) {
+                        sendJson(res, 403, {
+                            message: 'You are not an active player in this game.'
+                        });
+                        return;
+                    }
+
+                    const player = players[0];
+
+                    db.query(
+                        `SELECT auction_id, property_id, highest_bid,
+                                highest_bidder_id, auction_status, ends_at
+                         FROM Property_Auction
+                         WHERE auction_id = ? AND game_id = ?`,
+                        [auctionId, gameId],
+                        (auctionErr, auctions) => {
+                            if (auctionErr) {
+                                console.error('Auction lookup error:', auctionErr);
+                                sendJson(res, 500, {
+                                    message: 'Could not load the auction.'
+                                });
+                                return;
+                            }
+
+                            if (
+                                auctions.length === 0 ||
+                                auctions[0].auction_status !== 'open'
+                            ) {
+                                sendJson(res, 409, {
+                                    message: 'This auction is not open.'
+                                });
+                                return;
+                            }
+
+                            const auction = auctions[0];
+
+                            if (new Date(auction.ends_at).getTime() <= Date.now()) {
+                                sendJson(res, 409, {
+                                    message: 'The bidding time has expired.'
+                                });
+                                return;
+                            }
+
+                            if (Number(player.money) < bid) {
+                                sendJson(res, 400, {
+                                    message: 'You do not have enough money for this bid.'
+                                });
+                                return;
+                            }
+
+                            if (bid <= Number(auction.highest_bid)) {
+                                sendJson(res, 400, {
+                                    message: 'Your bid must be higher than the current highest bid.'
+                                });
+                                return;
+                            }
+
+                            if (
+                                Number(auction.highest_bidder_id) ===
+                                Number(player.player_id)
+                            ) {
+                                sendJson(res, 409, {
+                                    message: 'You already have the highest bid.'
+                                });
+                                return;
+                            }
+
+                            db.query(
+                                `UPDATE Property_Auction
+                                 SET highest_bid = ?,
+                                     highest_bidder_id = ?
+                                 WHERE auction_id = ?
+                                   AND game_id = ?
+                                   AND auction_status = 'open'
+                                   AND ends_at > NOW()
+                                   AND highest_bid < ?`,
+                                [
+                                    bid,
+                                    player.player_id,
+                                    auctionId,
+                                    gameId,
+                                    bid
+                                ],
+                                (updateErr, result) => {
+                                    if (updateErr) {
+                                        console.error('Save auction bid error:', updateErr);
+                                        sendJson(res, 500, {
+                                            message: 'Could not save your bid.'
+                                        });
+                                        return;
+                                    }
+
+                                    if (result.affectedRows === 0) {
+                                        sendJson(res, 409, {
+                                            message: 'The auction changed or expired. Refresh and try again.'
+                                        });
+                                        return;
+                                    }
+
+                                    
+                                    if (io) {
+                                        io.to(`game:${gameId}`).emit('auctionBidUpdated', {
+                                            gameId,
+                                            auctionId,
+                                            highestBid: bid,
+                                            highestBidderId: player.player_id,
+                                            highestBidderName: player.player_name
+                                        });
+                                    }
+
+
+                                    sendJson(res, 200, {
+                                        message: 'Bid placed successfully!',
+                                        auctionId,
+                                        highestBid: bid,
+                                        highestBidderId: player.player_id
+                                    });
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+        });
+
+        return true;
+    }
+
+    
+    // FINISH PROPERTY AUCTION
+    if (req.method === 'POST' && route === '/games/auction/finish') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to finish an auction.'
+            });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+            const auctionId = Number(requestData.auctionId);
+
+            if (
+                !Number.isSafeInteger(gameId) || gameId <= 0 ||
+                !Number.isSafeInteger(auctionId) || auctionId <= 0
+            ) {
+                sendJson(res, 400, {
+                    message: 'Invalid game or auction ID.'
+                });
+                return;
+            }
+
+            // Verify that the requester is an active player in this game.
+            db.query(
+                `SELECT player_id
+                 FROM Player
+                 WHERE game_id = ?
+                   AND user_id = ?
+                   AND is_bankrupt = 0`,
+                [gameId, session.userId],
+                (playerErr, players) => {
+                    if (playerErr) {
+                        console.error('Auction finisher lookup error:', playerErr);
+                        sendJson(res, 500, {
+                            message: 'Could not verify your player.'
+                        });
+                        return;
+                    }
+
+                    if (players.length === 0) {
+                        sendJson(res, 403, {
+                            message: 'You are not an active player in this game.'
+                        });
+                        return;
+                    }
+
+                    db.beginTransaction(transactionErr => {
+                        if (transactionErr) {
+                            console.error('Auction transaction error:', transactionErr);
+                            sendJson(res, 500, {
+                                message: 'Could not begin auction finalization.'
+                            });
+                            return;
+                        }
+
+                        db.query(
+                            `SELECT auction_id, property_id, starting_player_id,
+                                    highest_bid, highest_bidder_id,
+                                    auction_status, ends_at
+                             FROM Property_Auction
+                             WHERE auction_id = ? AND game_id = ?
+                             FOR UPDATE`,
+                            [auctionId, gameId],
+                            (auctionErr, auctions) => {
+                                if (auctionErr || auctions.length === 0) {
+                                    return db.rollback(() => {
+                                        console.error(
+                                            'Auction lookup error:',
+                                            auctionErr
+                                        );
+
+                                        sendJson(res, auctionErr ? 500 : 404, {
+                                            message: auctionErr
+                                                ? 'Could not load the auction.'
+                                                : 'Auction not found.'
+                                        });
+                                    });
+                                }
+
+                                const auction = auctions[0];
+
+                                if (auction.auction_status !== 'open') {
+                                    return db.rollback(() => {
+                                        sendJson(res, 409, {
+                                            message: 'This auction has already finished.'
+                                        });
+                                    });
+                                }
+
+                                if (
+                                    !auction.ends_at ||
+                                    new Date(auction.ends_at).getTime() > Date.now()
+                                ) {
+                                    return db.rollback(() => {
+                                        sendJson(res, 409, {
+                                            message: 'The auction timer has not expired yet.'
+                                        });
+                                    });
+                                }
+
+                                // NO BIDS: close the auction and end the starter's turn.
+                                if (!auction.highest_bidder_id) {
+                                    db.query(
+                                        `UPDATE Property_Auction
+                                         SET auction_status = 'no_bids'
+                                         WHERE auction_id = ?
+                                           AND auction_status = 'open'`,
+                                        [auctionId],
+                                        updateErr => {
+                                            if (updateErr) {
+                                                return db.rollback(() => {
+                                                    console.error(
+                                                        'Close no-bid auction error:',
+                                                        updateErr
+                                                    );
+
+                                                    sendJson(res, 500, {
+                                                        message: 'Could not close the auction.'
+                                                    });
+                                                });
+                                            }
+
+                                            advanceAuctionTurn(
+                                                db,
+                                                gameId,
+                                                auction.starting_player_id,
+                                                (turnErr, turnAdvanced) => {
+                                                    if (turnErr) {
+                                                        return db.rollback(() => {
+                                                            console.error(
+                                                                'Advance auction turn error:',
+                                                                turnErr
+                                                            );
+
+                                                            sendJson(res, 500, {
+                                                                message: 'Could not advance the turn after the auction.'
+                                                            });
+                                                        });
+                                                    }
+
+                                                    db.commit(commitErr => {
+                                                        if (commitErr) {
+                                                            return db.rollback(() => {
+                                                                console.error(
+                                                                    'Auction commit error:',
+                                                                    commitErr
+                                                                );
+
+                                                                sendJson(res, 500, {
+                                                                    message: 'Could not save the auction result.'
+                                                                });
+                                                            });
+                                                        }
+
+                                                        if (io) {
+                                                            io.to(`game:${gameId}`).emit(
+                                                                'auctionFinished',
+                                                                {
+                                                                    gameId,
+                                                                    auctionId,
+                                                                    propertyId: auction.property_id,
+                                                                    propertyName: null,
+                                                                    winnerPlayerId: null,
+                                                                    winnerPlayerName: null,
+                                                                    winningBid: 0,
+                                                                    status: 'no_bids',
+                                                                    turnAdvanced
+                                                                }
+                                                            );
+                                                        }
+
+                                                        sendJson(res, 200, {
+                                                            message: 'Auction ended with no bids.',
+                                                            auctionId,
+                                                            status: 'no_bids',
+                                                            turnAdvanced
+                                                        });
+                                                    });
+                                                }
+                                            );
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                // Look up the winner and property names.
+                                db.query(
+                                    `SELECT
+                                        Player.player_name,
+                                        Property.property_name
+                                     FROM Player
+                                     JOIN Property
+                                       ON Property.property_id = ?
+                                     WHERE Player.player_id = ?
+                                       AND Player.game_id = ?`,
+                                    [
+                                        auction.property_id,
+                                        auction.highest_bidder_id,
+                                        gameId
+                                    ],
+                                    (winnerErr, winnerRows) => {
+                                        if (winnerErr || winnerRows.length === 0) {
+                                            return db.rollback(() => {
+                                                console.error(
+                                                    'Auction winner lookup error:',
+                                                    winnerErr
+                                                );
+
+                                                sendJson(res, 500, {
+                                                    message: 'Could not find the auction winner.'
+                                                });
+                                            });
+                                        }
+
+                                        const winnerPlayerName =
+                                            winnerRows[0].player_name;
+
+                                        const propertyName =
+                                            winnerRows[0].property_name;
+
+                                        // Deduct the winning bid.
+                                        db.query(
+                                            `UPDATE Player
+                                             SET money = money - ?
+                                             WHERE player_id = ?
+                                               AND game_id = ?
+                                               AND is_bankrupt = 0
+                                               AND money >= ?`,
+                                            [
+                                                auction.highest_bid,
+                                                auction.highest_bidder_id,
+                                                gameId,
+                                                auction.highest_bid
+                                            ],
+                                            (paymentErr, paymentResult) => {
+
+                                                console.log('Auction payment error:', paymentErr);
+                                                console.log('Winning bid:', auction.highest_bid);
+                                                console.log('Winning player ID:', auction.highest_bidder_id);
+                                                console.log('Rows updated:', paymentResult?.affectedRows);
+                                                if (
+                                                    paymentErr ||
+                                                    paymentResult.affectedRows !== 1
+                                                ) {
+                                                    return db.rollback(() => {
+                                                        console.error(
+                                                            'Auction payment error:',
+                                                            paymentErr
+                                                        );
+
+                                                        sendJson(res, 409, {
+                                                            message:
+                                                                'The winning bidder no longer has enough money. The auction was not finalized.'
+                                                        });
+                                                    });
+                                                }
+
+                                                // Award the property to the winner.
+                                                db.query(
+                                                    `INSERT INTO Player_Property
+                                                        (player_id, property_id)
+                                                     VALUES (?, ?)`,
+                                                    [
+                                                        auction.highest_bidder_id,
+                                                        auction.property_id
+                                                    ],
+                                                    propertyErr => {
+                                                        if (propertyErr) {
+                                                            return db.rollback(() => {
+                                                                console.error(
+                                                                    'Award auction property error:',
+                                                                    propertyErr
+                                                                );
+
+                                                                sendJson(res, 500, {
+                                                                    message: 'Could not award the property.'
+                                                                });
+                                                            });
+                                                        }
+
+                                                        // Mark the auction completed.
+                                                        db.query(
+                                                            `UPDATE Property_Auction
+                                                             SET auction_status = 'completed'
+                                                             WHERE auction_id = ?
+                                                               AND auction_status = 'open'`,
+                                                            [auctionId],
+                                                            (statusErr, statusResult) => {
+                                                                if (
+                                                                    statusErr ||
+                                                                    statusResult.affectedRows !== 1
+                                                                ) {
+                                                                    return db.rollback(() => {
+                                                                        console.error(
+                                                                            'Update auction status error:',
+                                                                            statusErr
+                                                                        );
+
+                                                                        sendJson(res, 500, {
+                                                                            message: 'Could not save the auction result.'
+                                                                        });
+                                                                    });
+                                                                }
+
+                                                                // End the auction starter's turn.
+                                                                advanceAuctionTurn(
+                                                                    db,
+                                                                    gameId,
+                                                                    auction.starting_player_id,
+                                                                    (turnErr, turnAdvanced) => {
+                                                                        if (turnErr) {
+                                                                            return db.rollback(() => {
+                                                                                console.error(
+                                                                                    'Advance auction turn error:',
+                                                                                    turnErr
+                                                                                );
+
+                                                                                sendJson(res, 500, {
+                                                                                    message: 'Could not advance the turn after the auction.'
+                                                                                });
+                                                                            });
+                                                                        }
+
+                                                                        // Commit the auction and turn update together.
+                                                                        db.commit(commitErr => {
+                                                                            if (commitErr) {
+                                                                                return db.rollback(() => {
+                                                                                    console.error(
+                                                                                        'Auction commit error:',
+                                                                                        commitErr
+                                                                                    );
+
+                                                                                    sendJson(res, 500, {
+                                                                                        message: 'Could not save the auction result.'
+                                                                                    });
+                                                                                });
+                                                                            }
+
+                                                                            if (io) {
+                                                                                io.to(`game:${gameId}`).emit(
+                                                                                    'auctionFinished',
+                                                                                    {
+                                                                                        gameId,
+                                                                                        auctionId,
+                                                                                        propertyId: auction.property_id,
+                                                                                        propertyName,
+                                                                                        winnerPlayerId:
+                                                                                            auction.highest_bidder_id,
+                                                                                        winnerPlayerName,
+                                                                                        winningBid: Number(
+                                                                                            auction.highest_bid
+                                                                                        ),
+                                                                                        status: 'completed',
+                                                                                        turnAdvanced
+                                                                                    }
+                                                                                );
+                                                                            }
+
+                                                                            sendJson(res, 200, {
+                                                                                message:
+                                                                                    'Auction finished and property awarded!',
+                                                                                auctionId,
+                                                                                propertyId: auction.property_id,
+                                                                                propertyName,
+                                                                                winnerPlayerId:
+                                                                                    auction.highest_bidder_id,
+                                                                                winnerPlayerName,
+                                                                                winningBid: Number(
+                                                                                    auction.highest_bid
+                                                                                ),
+                                                                                status: 'completed',
+                                                                                turnAdvanced
+                                                                            });
+                                                                        });
+                                                                    }
+                                                                );
+                                                            }
+                                                        );
+                                                    }
+                                                );
+                                            }
+                                        );
+                                    }
+                                );
+                            }
+                        );
+                    });
                 }
             );
         });
@@ -937,6 +1796,15 @@ if (req.method === 'POST' && route === '/games/buy-property') {
                                 message: 'Could not purchase the property.'
                             });
                             return;
+                        }
+
+                        if (io) {
+                            io.to(`game:${gameId}`).emit('propertyPurchased', {
+                                gameId,
+                                propertyId: property.propertyId,
+                                propertyName: property.propertyName,
+                                playerName: property.playerName
+                            });
                         }
 
                         sendJson(res, 200, {

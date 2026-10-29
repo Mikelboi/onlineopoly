@@ -41,11 +41,26 @@
 
         #game-controls {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 10px;
-            margin: 8px auto;
-            padding: 0;
+            gap: 12px;
+            width: 100%;
+            text-align: center;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        #diceResult {
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            margin: 0;
+            padding: 12px 16px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            background-color: #fff;
+            color: #333;
+            font-weight: bold;
         }
 
         #game-controls p {
@@ -731,6 +746,17 @@
             background: #b73d1f;
         }
 
+        #auction-bid-amount::-webkit-inner-spin-button,
+        #auction-bid-amount::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        #auction-bid-amount {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
         
         /* Rent popup */
         #rent-popup[hidden] {
@@ -1109,12 +1135,7 @@
         }
     </style>
 </head>
-<body>
-
-     <div id="game-controls">
-        <button id="rollDiceButton" type="button">Roll Dice</button>
-        <p id="diceResult">Roll the dice to move!</p>
-    </div>
+<body> 
 
     <div class="game-layout">
 
@@ -1127,19 +1148,45 @@
         <div class="game-board" id="game-board">
             <div class="board-center">
                 <h2 class="center-logo">ONLINEOPOLY</h2>
-            <div id="property-purchase-menu" hidden>
-        <h2 id="purchase-property-name"></h2>
-        <p id="purchase-property-price"></p>
-        <p>Do you want to purchase this?</p>
 
-        <button id="buy-property-button" type="button">
-            Buy
-        </button>
-
-        <button id="auction-property-button" type="button">
-            Auction
-        </button>
+            <div id="game-controls">
+        <p id="diceResult">Roll the dice to move!</p>
     </div>
+            
+        <div id="property-purchase-menu" hidden>
+            <h2 id="purchase-property-name"></h2>
+            <p id="purchase-property-price"></p>
+            <p>Do you want to purchase this?</p>
+
+            <button id="buy-property-button" type="button">
+                Buy
+            </button>
+
+            <button id="auction-property-button" type="button">
+                Auction
+            </button>
+        </div>
+
+            <div id="auction-bidding-section" hidden>
+                <h3>Place Your Bid</h3>
+
+                <label for="auction-bid-amount">Bid amount:</label>
+                <input
+                    id="auction-bid-amount"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="Enter your bid"
+                >
+
+                <button id="place-bid-button" type="button">
+                    Place Bid
+                </button>
+
+                <p id="auction-bid-message"></p>
+            </div>
+        </div>
+            </div>
         <div id="rent-popup" hidden>
                 <div class="rent-popup-content">
                     <h2>Pay up Bub!</h2>
@@ -1165,13 +1212,13 @@
 <script>
     const socket = io();
 
-    socket.on('playerMoved', async (move) => {
-        const currentGameId =
-            new URLSearchParams(window.location.search).get('gameId');
-
-        if (String(move.gameId) !== String(currentGameId)) {
+        socket.on('playerMoved', async (move) => {
+        if (Number(move.gameId) !== Number(gameId)) {
             return;
         }
+
+        diceResult.textContent =
+            `${move.playerName} rolled a ${move.diceTotal} `;
 
         await loadPlayerTokens();
     });
@@ -1204,7 +1251,181 @@
         console.error('Socket connection error:', error.message);
     });
 
-        const rollDiceButton = document.getElementById('rollDiceButton');
+    socket.on('propertyPurchased', async (data) => {
+            if (Number(data.gameId) !== Number(gameId)) {
+                return;
+            }
+
+            console.log('Property purchased:', data);
+
+            diceResult.textContent =
+                `${data.playerName} purchased ${data.propertyName}.`;
+
+            await loadPlayerTokens();
+        });
+    
+
+let auctionTimer = null;
+let auctionFinishRequested = false;
+let activeAuctionId = null;
+
+async function finishAuction() {
+    if (auctionFinishRequested || activeAuctionId === null) {
+        return;
+    }
+
+    auctionFinishRequested = true;
+
+    try {
+        const response = await fetch('/games/auction/finish', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameId: Number(gameId),
+                auctionId: Number(activeAuctionId)
+            })
+        });
+
+        const result = await response.json();
+
+        console.log('Auction finish response:', {
+            status: response.status,
+            result
+        });
+
+        if (!response.ok) {
+            auctionBidMessage.textContent =
+                result.message || 'Could not finish the auction.';
+
+            // Allow another attempt if the server rejected the request.
+            auctionFinishRequested = false;
+        }
+    } catch (error) {
+        console.error('Finish auction request failed:', error);
+
+        auctionBidMessage.textContent =
+            'Could not finish the auction. Check the connection and try again.';
+
+        auctionFinishRequested = false;
+    }
+}
+
+function startAuctionCountdown(endsAt, propertyName) {
+    if (auctionTimer !== null) {
+        clearInterval(auctionTimer);
+        auctionTimer = null;
+    }
+
+    auctionFinishRequested = false;
+
+    const endTime = new Date(endsAt).getTime();
+
+    if (!Number.isFinite(endTime)) {
+        console.error('Invalid auction end time:', endsAt);
+        auctionBidMessage.textContent =
+            'Could not load the auction countdown.';
+        return;
+    }
+
+    function updateCountdown() {
+        const secondsLeft = Math.max(
+            0,
+            Math.ceil((endTime - Date.now()) / 1000)
+        );
+
+        if (secondsLeft > 0) {
+            auctionBidMessage.textContent =
+                `Auction for ${propertyName}: ${secondsLeft} seconds remaining.`;
+            return;
+        }
+
+        auctionBidMessage.textContent = 'Auction expired. Finishing...';
+
+        if (auctionTimer !== null) {
+            clearInterval(auctionTimer);
+            auctionTimer = null;
+        }
+
+        finishAuction();
+    }
+
+    updateCountdown();
+
+    if (auctionTimer === null && !auctionFinishRequested) {
+        auctionTimer = setInterval(updateCountdown, 250);
+    }
+}
+
+        
+        socket.on('auctionStarted', (data) => {
+            if (Number(data.gameId) !== Number(gameId)) return;
+
+            activeAuctionId = data.auctionId;
+
+            propertyPurchaseMenu.hidden = true;
+            auctionBiddingSection.hidden = false;
+
+            auctionBidMessage.textContent = 'Auction started! Place your bid.';
+            auctionBidAmount.value = '';
+
+            startAuctionCountdown(data.endsAt, data.propertyName);
+        });
+
+
+        socket.on('auctionBidUpdated', (data) => {
+            if (Number(data.gameId) !== Number(gameId)) {
+                return;
+            }
+
+            console.log('Auction bid updated:', data);
+
+            auctionBidMessage.textContent =
+                `Highest bid: $${data.highestBid} ` +
+                `by ${data.highestBidderName}.`;
+        });
+
+       
+socket.on('auctionFinished', async (data) => {
+    if (Number(data.gameId) !== Number(gameId)) {
+        return;
+    }
+
+    if (auctionTimer !== null) {
+        clearInterval(auctionTimer);
+        auctionTimer = null;
+    }
+
+    auctionBiddingSection.hidden = true;
+    auctionBidAmount.value = '';
+    activeAuctionId = null;
+    auctionFinishRequested = false;
+
+    if (data.status === 'no_bids') {
+        diceResult.textContent = 'The auction ended with no bids.';
+    } else {
+        diceResult.textContent =
+            `Auction finished! ${data.winnerPlayerName || 'The winner'} ` +
+            `won ${data.propertyName || 'the property'} for $${data.winningBid}.`;
+    }
+
+    await loadPlayerTokens();
+});
+
+
+        socket.on('rentPaid', async (data) => {
+            if (Number(data.gameId) !== Number(gameId)) {
+                return;
+            }
+
+            diceResult.textContent =
+                `${data.playerName} landed on ${data.propertyName} ` +
+                `and paid $${data.rent} rent to ${data.ownerPlayerName}.`;
+
+            await loadPlayerTokens();
+        });
+
         const diceResult = document.getElementById('diceResult');
         let isRolling = false;
 
@@ -1214,6 +1435,11 @@
 
         const buyPropertyButton = document.getElementById('buy-property-button');
         const auctionPropertyButton = document.getElementById('auction-property-button');
+
+        const auctionBiddingSection = document.getElementById('auction-bidding-section');
+        const auctionBidAmount = document.getElementById('auction-bid-amount');
+        const placeBidButton = document.getElementById('place-bid-button');
+        const auctionBidMessage = document.getElementById('auction-bid-message');
                         
 
         async function rollDice() {
@@ -1227,8 +1453,8 @@
         }
 
         isRolling = true;
-            rollDiceButton.disabled = true;
             diceResult.textContent = 'Rolling dice...';
+
 
         
 
@@ -1303,10 +1529,15 @@ async function endTurn() {
         alert(error.message);
     }
 }
-    rollDiceButton.addEventListener('click', rollDice);
 
-    document.getElementById('game-board')
-        .addEventListener('click', rollDice);
+   document.getElementById('game-board').addEventListener('click', (event) => {
+    if (activeAuctionId !== null) {
+        diceResult.textContent = 'You cannot roll while an auction is active.';
+        return;
+    }
+
+    rollDice(event);
+});
 
     buyPropertyButton.addEventListener('click', async (event) => {
     // Prevent this click from triggering another dice roll.
@@ -1356,12 +1587,76 @@ async function endTurn() {
     }
 });
 
-auctionPropertyButton.addEventListener('click', (event) => {
+
+
+auctionPropertyButton.addEventListener('click', async (event) => {
     event.stopPropagation();
 
-    diceResult.textContent =
-        'Auction functionality has not been implemented yet.';
+    try {
+        const response = await fetch('/games/auction/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameId: Number(gameId)
+            })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            diceResult.textContent = result.message;
+            console.log('Auction start rejected:', result.message);
+        }
+    } catch (error) {
+        console.error('Start auction error:', error);
+        diceResult.textContent = 'Could not start the auction.';
+    }
 });
+    
+
+
+placeBidButton.addEventListener('click', async () => {
+    const bid = Number(auctionBidAmount.value);
+
+    if (!Number.isFinite(bid) || bid <= 0) {
+        auctionBidMessage.textContent = 'Enter a valid bid amount.';
+        return;
+    }
+
+    if (!Number.isInteger(bid)) {
+        auctionBidMessage.textContent = 'Enter a whole-number bid.';
+        return;
+    }
+
+    try {
+        const response = await fetch('/games/auction/bid', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameId,
+                auctionId: activeAuctionId,
+                bid
+            })
+        });
+
+        const data = await response.json();
+
+        auctionBidMessage.textContent = data.message;
+
+        if (response.ok) {
+            auctionBidAmount.value = '';
+        }
+    } catch (error) {
+        console.error('Place bid error:', error);
+        auctionBidMessage.textContent = 'Could not submit your bid.';
+    }
+});
+
+
         /* ========================================
            11. BOARD SPACE DATA
         ======================================== */
@@ -1450,7 +1745,6 @@ auctionPropertyButton.addEventListener('click', (event) => {
     purchasePropertyName.textContent = space.name;
     purchasePropertyPrice.textContent = `Price: $${space.price}`;
     propertyPurchaseMenu.hidden = false;
-    rollDiceButton.disabled = true;
 
 }
 
@@ -1468,7 +1762,6 @@ auctionPropertyButton.addEventListener('click', (event) => {
             `Owned by ${rent.ownerPlayerName}`;
 
         popup.hidden = false;
-        rollDiceButton.disabled = true;
     }
 
 
@@ -1479,7 +1772,6 @@ auctionPropertyButton.addEventListener('click', (event) => {
 
         // Prevent duplicate clicks while ending the turn.
         continueButton.disabled = true;
-        rollDiceButton.disabled = true;
 
         try {
             const response = await fetch('/games/end-turn', {
@@ -1836,12 +2128,6 @@ auctionPropertyButton.addEventListener('click', (event) => {
                     'Rent popup hidden:',
                     document.getElementById('rent-popup').hidden
                 );
-                console.log('Is roll disabled?', rollDiceButton.disabled);
-
-                rollDiceButton.disabled =
-                    !myPlayer ||
-                    Number(myPlayer.player_id) !== currentPlayerId ||
-                    popupOpen;
 
                 return data;
             } catch (error) {
