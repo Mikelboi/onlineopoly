@@ -1,10 +1,4 @@
-function sendJson(res, status, data, headers = {}) {
-    res.writeHead(status, {
-        'Content-Type': 'application/json',
-        ...headers
-    });
-    res.end(JSON.stringify(data));
-}
+const { sendJson, getSession } = require('./httpHelpers');
 
 function readBody(req, res) {
     return new Promise((resolve, reject) => {
@@ -33,25 +27,6 @@ function readBody(req, res) {
 
         req.on('error', reject);
     });
-}
-
-function getSession(req, sessions) {
-    const cookies = (req.headers.cookie || '').split(';');
-    const cookie = cookies
-        .map(item => item.trim())
-        .find(item => item.startsWith('onlineopoly_session='));
-
-    if (!cookie) return null;
-
-    const sessionId = cookie.substring('onlineopoly_session='.length);
-    const session = sessions.get(sessionId);
-
-    if (!session || session.expiresAt <= Date.now()) {
-        if (session) sessions.delete(sessionId);
-        return null;
-    }
-
-    return session;
 }
 
 function handleAccountRequest(req, res, dependencies) {

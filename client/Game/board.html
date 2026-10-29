@@ -100,7 +100,7 @@
         #game-board {
             grid-column: 2;
             grid-row: 1 / 4;
-            transform: translateY(250px);
+            transform: translateY(285px);
         }
 
         .player-card {
@@ -698,7 +698,7 @@
             color: #fca37c;
             text-transform: uppercase;
             letter-spacing: 2px;
-            transform: rotate(-35deg);
+            transform: translateY(-8px) rotate(-35deg);
         }
 
         #property-purchase-menu {
@@ -1150,6 +1150,7 @@
                 <h2 class="center-logo">ONLINEOPOLY</h2>
 
             <div id="game-controls">
+        <p id="current-turn-indicator">Loading turn...</p>
         <p id="diceResult">Roll the dice to move!</p>
     </div>
             
@@ -1183,7 +1184,9 @@
                     Place Bid
                 </button>
 
-                <p id="auction-bid-message"></p>
+                <p id="auction-countdown" aria-live="polite"></p>
+                <p id="auction-highest-bidder">Highest bidder: No bids yet.</p>
+                <p id="auction-bid-message" aria-live="polite"></p>
             </div>
         </div>
             </div>
@@ -1220,6 +1223,11 @@
         diceResult.textContent =
             `${move.playerName} rolled a ${move.diceTotal} `;
 
+        await loadPlayerTokens();
+    });
+
+    socket.on('turnChanged', async (data) => {
+        if (Number(data.gameId) !== Number(gameId)) return;
         await loadPlayerTokens();
     });
 
@@ -1336,12 +1344,12 @@ function startAuctionCountdown(endsAt, propertyName) {
         );
 
         if (secondsLeft > 0) {
-            auctionBidMessage.textContent =
+            auctionCountdown.textContent =
                 `Auction for ${propertyName}: ${secondsLeft} seconds remaining.`;
             return;
         }
 
-        auctionBidMessage.textContent = 'Auction expired. Finishing...';
+        auctionCountdown.textContent = 'Auction expired. Finishing...';
 
         if (auctionTimer !== null) {
             clearInterval(auctionTimer);
@@ -1368,6 +1376,7 @@ function startAuctionCountdown(endsAt, propertyName) {
             auctionBiddingSection.hidden = false;
 
             auctionBidMessage.textContent = 'Auction started! Place your bid.';
+            auctionHighestBidder.textContent = 'Highest bidder: No bids yet.';
             auctionBidAmount.value = '';
 
             startAuctionCountdown(data.endsAt, data.propertyName);
@@ -1381,9 +1390,8 @@ function startAuctionCountdown(endsAt, propertyName) {
 
             console.log('Auction bid updated:', data);
 
-            auctionBidMessage.textContent =
-                `Highest bid: $${data.highestBid} ` +
-                `by ${data.highestBidderName}.`;
+            auctionHighestBidder.textContent =
+                `Highest bidder: ${data.highestBidderName} ($${data.highestBid}).`;
         });
 
        
@@ -1440,6 +1448,8 @@ socket.on('auctionFinished', async (data) => {
         const auctionBidAmount = document.getElementById('auction-bid-amount');
         const placeBidButton = document.getElementById('place-bid-button');
         const auctionBidMessage = document.getElementById('auction-bid-message');
+        const auctionCountdown = document.getElementById('auction-countdown');
+        const auctionHighestBidder = document.getElementById('auction-highest-bidder');
                         
 
         async function rollDice() {
@@ -2020,7 +2030,7 @@ placeBidButton.addEventListener('click', async () => {
         }
 
         
-        function displayPlayerCards(players) {
+        function displayPlayerCards(players, ownedPropertyRows = []) {
             const playerCards = [
                 document.getElementById('player-card-1'),
                 document.getElementById('player-card-2'),
@@ -2072,8 +2082,11 @@ placeBidButton.addEventListener('click', async () => {
                         })
                         : 'Unavailable'
                 }`;
-                const properties = document.createElement('p');
-                properties.textContent = 'Properties: 0';
+                const playerProperties = ownedPropertyRows.filter(
+                    property => Number(property.player_id) === Number(player.player_id)
+                );
+                const propertiesSummary = document.createElement('p');
+                propertiesSummary.textContent = 'Properties: ' + playerProperties.length;
 
                 const improvements = document.createElement('p');
                 improvements.textContent = 'Houses / hotels: 0';
@@ -2081,7 +2094,7 @@ placeBidButton.addEventListener('click', async () => {
                 card.append(
                     name,
                     money,
-                    properties,
+                    propertiesSummary,
                     improvements
                 );
 
@@ -2112,8 +2125,17 @@ placeBidButton.addEventListener('click', async () => {
                 const data = await response.json();
 
                 placePlayerTokens(data.players);
-                displayPlayerCards(data.players);
+                displayPlayerCards(data.players, data.properties || []);
                 const currentPlayerId = Number(data.game.current_player_id);
+                const currentPlayer = data.players.find(
+                    player => Number(player.player_id) === currentPlayerId
+                );
+                const turnIndicator = document.getElementById('current-turn-indicator');
+                if (turnIndicator) {
+                    turnIndicator.textContent = currentPlayer
+                        ? `${currentPlayer.player_name}, it's your turn.`
+                        : 'Waiting for the next turn.';
+                }
 
                 const myPlayer = data.players.find(
                     player => Number(player.user_id) === Number(data.currentUserId)
@@ -2138,4 +2160,6 @@ placeBidButton.addEventListener('click', async () => {
     </script>
 </body>
 </html>
+
+
 

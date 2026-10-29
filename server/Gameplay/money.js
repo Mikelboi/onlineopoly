@@ -1,4 +1,3 @@
-
 function updatePlayerMoney(db, playerId, gameId, amount, transactionType, callback) {
     if (!Number.isSafeInteger(playerId) || playerId <= 0) {
         callback(new Error('Invalid player ID.'));
@@ -24,60 +23,79 @@ function updatePlayerMoney(db, playerId, gameId, amount, transactionType, callba
         return;
     }
 
-    db.beginTransaction(err => {
-        if (err) {
-            callback(err);
+    db.getConnection((connectionErr, connection) => {
+        if (connectionErr) {
+            callback(connectionErr);
             return;
         }
 
-        const failTransaction = error => {
-            db.rollback(() => callback(error));
-        };
+        connection.beginTransaction(beginErr => {
+            if (beginErr) {
+                connection.release();
+                callback(beginErr);
+                return;
+            }
 
-        db.query(
-            `UPDATE Player
-             SET money = money + ?
-             WHERE player_id = ?
-               AND game_id = ?
-               AND is_bankrupt = 0
-               AND money + ? >= 0`,
-            [amount, playerId, gameId, amount],
-            (updateErr, result) => {
-                if (updateErr) {
-                    failTransaction(updateErr);
-                    return;
-                }
+            let finished = false;
 
-                if (result.affectedRows !== 1) {
-                    failTransaction(
-                        new Error('Player not found, bankrupt, or insufficient funds.')
-                    );
-                    return;
-                }
+            const failTransaction = error => {
+                if (finished) return;
+                finished = true;
 
-                db.query(
-                    `INSERT INTO Game_Transaction
-                     (game_id, amount, transaction_type, player_id)
-                     VALUES (?, ?, ?, ?)`,
-                    [gameId, amount, transactionType, playerId],
-                    (insertErr) => {
-                        if (insertErr) {
-                            failTransaction(insertErr);
-                            return;
-                        }
+                connection.rollback(() => {
+                    connection.release();
+                    callback(error);
+                });
+            };
 
-                        db.commit(commitErr => {
-                            if (commitErr) {
-                                failTransaction(commitErr);
+            connection.query(
+                `UPDATE Player
+                 SET money = money + ?
+                 WHERE player_id = ?
+                   AND game_id = ?
+                   AND is_bankrupt = 0
+                   AND money + ? >= 0`,
+                [amount, playerId, gameId, amount],
+                (updateErr, result) => {
+                    if (updateErr) {
+                        failTransaction(updateErr);
+                        return;
+                    }
+
+                    if (result.affectedRows !== 1) {
+                        failTransaction(
+                            new Error('Player not found, bankrupt, or insufficient funds.')
+                        );
+                        return;
+                    }
+
+                    connection.query(
+                        `INSERT INTO Game_Transaction
+                         (game_id, amount, transaction_type, player_id)
+                         VALUES (?, ?, ?, ?)`,
+                        [gameId, amount, transactionType, playerId],
+                        insertErr => {
+                            if (insertErr) {
+                                failTransaction(insertErr);
                                 return;
                             }
 
-                            callback(null);
-                        });
-                    }
-                );
-            }
-        );
+                            connection.commit(commitErr => {
+                                if (commitErr) {
+                                    failTransaction(commitErr);
+                                    return;
+                                }
+
+                                if (finished) return;
+                                finished = true;
+                                connection.release();
+                                callback(null);
+                            });
+                        }
+                    );
+                }
+            );
+        });
     });
 }
 
