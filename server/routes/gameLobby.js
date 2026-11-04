@@ -524,12 +524,24 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                                     `SELECT
                                         Property.property_id,
                                         Property.property_name,
-                                        CurrentOwnership.player_id
+                                        Property.property_type,
+                                        Property.price,
+                                        Property.rent,
+                                        Property.color_group,
+                                        Property.house_cost,
+                                        Property.hotel_cost,
+                                        CurrentOwnership.player_id,
+                                        CurrentOwnership.houses,
+                                        CurrentOwnership.hotels,
+                                        CurrentOwnership.mortgaged
                                     FROM Property
                                     LEFT JOIN (
                                         SELECT
                                             Player_Property.property_id,
-                                            Player_Property.player_id
+                                            Player_Property.player_id,
+                                            Player_Property.houses,
+                                            Player_Property.hotels,
+                                            Player_Property.mortgaged
                                         FROM Player_Property
                                         JOIN Player
                                             ON Player.player_id = Player_Property.player_id

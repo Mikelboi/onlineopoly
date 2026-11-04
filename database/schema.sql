@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`Player` (
 CREATE TABLE IF NOT EXISTS `onlineopoly`.`Property` (
   `property_id` INT NOT NULL AUTO_INCREMENT,
   `property_name` VARCHAR(45) NOT NULL,
+  `board_position` INT NOT NULL,
   `property_type` VARCHAR(45) NOT NULL,
   `price` DECIMAL(10,2) NOT NULL,
   `rent` DECIMAL(10,2) NOT NULL,
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`Property` (
   `house_cost` DECIMAL(10,2) DEFAULT NULL,
   `hotel_cost` DECIMAL(10,2) DEFAULT NULL,
   UNIQUE INDEX `property_name_UNIQUE` (`property_name` ASC) VISIBLE,
+  UNIQUE INDEX `property_board_position_UNIQUE` (`board_position` ASC) VISIBLE,
   PRIMARY KEY (`property_id`)
 ) ENGINE = InnoDB;
 

@@ -336,6 +336,10 @@
             z-index: 1;
         }
 
+        .board-space.corner[data-position="10"] .corner-sprite {
+            transform: rotate(90deg);
+        }
+
         .left-space, 
         .right-space {
             position: relative;
@@ -804,6 +808,235 @@
             cursor: pointer;
         }
 
+        .owned-properties-tab {
+            margin-top: 8px;
+            border-top: 1px solid #c8d5c5;
+        }
+
+        .owned-properties-tab summary {
+            padding: 8px 6px;
+            color: #236b43;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .owned-properties-tab summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .owned-properties-tab summary::after {
+            content: "+";
+            float: right;
+        }
+
+        .owned-properties-tab[open] summary::after {
+            content: "−";
+        }
+
+        .owned-properties-list {
+            display: grid;
+            gap: 3px;
+            max-height: 110px;
+            margin: 0;
+            padding: 0 0 6px;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .owned-property-group {
+            display: grid;
+            gap: 3px;
+        }
+
+        .owned-property-group-heading {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 2px;
+            color: #435443;
+            font-size: 10px;
+        }
+
+        .owned-property-group-swatch {
+            width: 9px;
+            height: 9px;
+            flex: 0 0 9px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 2px;
+        }
+
+        .owned-property-group-items {
+            display: grid;
+            gap: 3px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .owned-property-item {
+            display: grid;
+            grid-template-columns: 10px 1fr auto;
+            align-items: center;
+            width: 100%;
+            gap: 5px;
+            padding: 4px;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            background: #fff;
+            color: inherit;
+            font-size: 10px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .owned-property-item:hover,
+        .owned-property-item:focus-visible {
+            border-color: #356b43;
+            outline: none;
+        }
+
+        .owned-property-sprite {
+            width: 8px;
+            height: 22px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 2px;
+        }
+
+        .owned-property-name {
+            overflow-wrap: anywhere;
+        }
+
+        .owned-property-price {
+            color: #526452;
+            white-space: nowrap;
+        }
+
+        .owned-properties-empty {
+            margin: 0 6px 8px;
+            color: #667466;
+            font-size: 11px;
+        }
+
+        .property-card-dialog {
+            position: relative;
+            width: min(90vw, 380px);
+            padding: 0;
+            border: 2px solid #26352b;
+            border-radius: 12px;
+            background: #fffdf3;
+            color: #26352b;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        }
+
+        .property-card-dialog::backdrop {
+            background: rgba(20, 30, 22, 0.58);
+        }
+
+        .property-card-band {
+            min-height: 76px;
+            padding: 10px 42px 10px 16px;
+            box-sizing: border-box;
+            border-bottom: 2px solid #26352b;
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+        }
+
+        .property-card-kicker {
+            margin: 0 0 5px;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1.5px;
+        }
+
+        .property-card-band h2 {
+            margin: 0;
+            font-size: 20px;
+            text-transform: uppercase;
+        }
+
+        .property-card-content {
+            padding: 12px 20px 20px;
+        }
+
+        .property-card-content h2 {
+            margin: 0 34px 4px 0;
+            font-size: 22px;
+        }
+
+        .property-card-section-label {
+            margin-top: 18px;
+            padding-bottom: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .property-card-building-costs {
+            margin-top: 6px;
+        }
+
+        .property-card-building-costs .property-card-section-label {
+            margin: 0;
+            padding-bottom: 2px;
+        }
+
+        .property-card-building-details {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 6px 16px;
+            margin: 4px 0 0;
+            padding-top: 0;
+            font-size: 14px;
+        }
+
+        .property-card-building-details dt,
+        .property-card-building-details dd {
+            margin: 0;
+        }
+
+        .property-card-building-details dd {
+            font-weight: bold;
+            text-align: right;
+        }
+
+        .property-card-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 32px;
+            height: 32px;
+            border: 1px solid #26352b;
+            border-radius: 50%;
+            background: #fffdf3;
+            color: #26352b;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .property-card-details {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px 16px;
+            margin: 2px 0 0;
+            padding-top: 0;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #c8d5c5;
+            font-size: 14px;
+        }
+
+        .property-card-details dt,
+        .property-card-details dd {
+            margin: 0;
+        }
+
+        .property-card-details dd {
+            font-weight: bold;
+            text-align: right;
+        }
+
 
         /* Color definitions for property bars */
         .color-brown { background-color: #955436; }
@@ -1133,6 +1366,13 @@
 
             
         }
+
+        .board-space.left-space.image-only-space .space-content img[src*="Pennsyl.jpg"],
+        .board-space.right-space.image-only-space .space-content img[src*="reading.jpg"] {
+            width: 75% !important;
+            height: 150% !important;
+        }
+
     </style>
 </head>
 <body> 
@@ -1203,6 +1443,34 @@
                 </div>
             </div>
         </div>
+
+        <dialog id="property-card-dialog" class="property-card-dialog" aria-labelledby="property-card-name">
+            <div id="property-card-band" class="property-card-band">
+                <p class="property-card-kicker">TITLE DEED</p>
+                <h2 id="property-card-name"></h2>
+            </div>
+            <button
+                id="property-card-close"
+                class="property-card-close"
+                type="button"
+                aria-label="Close property card"
+            >
+                ×
+            </button>
+            <div class="property-card-content">
+                <dl id="property-card-details" class="property-card-details"></dl>
+                <section
+                    id="property-card-building-costs-section"
+                    class="property-card-building-costs"
+                >
+                    <div class="property-card-section-label">BUILDING COSTS</div>
+                    <dl
+                        id="property-card-building-details"
+                        class="property-card-building-details"
+                    ></dl>
+                </section>
+            </div>
+        </dialog>
         </div>
         </section>
    
@@ -1436,6 +1704,12 @@ socket.on('auctionFinished', async (data) => {
 
         const diceResult = document.getElementById('diceResult');
         let isRolling = false;
+        const propertyCardDialog = document.getElementById('property-card-dialog');
+        const propertyCardClose = document.getElementById('property-card-close');
+
+        propertyCardClose.addEventListener('click', () => {
+            propertyCardDialog.close();
+        });
 
         const propertyPurchaseMenu = document.getElementById('property-purchase-menu');
         const purchasePropertyName = document.getElementById('purchase-property-name');
@@ -1686,10 +1960,10 @@ placeBidButton.addEventListener('click', async () => {
             { name: "Jail / Visit", type: "corner", image: "/Game/sprites/visting.jpg" },
 
             // Left column
-            { name: "Plumpy Place", color: "#d94343", price: 140 },
+            { name: "Plumpy Place", color: "#800000", price: 140 },
             { name: "Electric Company", color: "#aaaaaa", price: 150, image: "/Game/sprites/electric.jpg" },
-            { name: "Grouch Street", color: "#d94343", price: 140 },
-            { name: "Rudy Road", color: "#d94343", price: 160 },
+            { name: "Grouch Street", color: "#800000", price: 140 },
+            { name: "Rudy Road", color: "#800000", price: 160 },
             { name: "Pennslyvania Railroad ", color: "#222222", price: 200, image: "/Game/sprites/Pennsyl.jpg"},
             { name: "Lavender Avenue", color: "#f49ac1", price: 180 },
             { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.jpg" },
@@ -1720,6 +1994,7 @@ placeBidButton.addEventListener('click', async () => {
             { name: "Luxury Tax", type: "special", text: "PAY $75.00" },
             { name: "Boardwalk", color: "#1134A6", price: 400 }
         ];
+
 
     function showPropertyPurchaseMenu(position, gameData) {
     const space = boardSpaces[position];
@@ -2030,6 +2305,158 @@ placeBidButton.addEventListener('click', async () => {
         }
 
         
+        function showPropertyCard(property) {
+            const normalizeName = name =>
+                String(name || '').trim().toLowerCase();
+            const boardSpace = boardSpaces.find(
+                space => normalizeName(space.name) === normalizeName(property.property_name)
+            );
+            const money = (value, maximumFractionDigits = 2) => {
+                if (value === null || value === undefined || value === '') {
+                    return '—';
+                }
+
+                const amount = Number(value);
+                return Number.isFinite(amount)
+                    ? amount.toLocaleString('en-US', {
+                        style: 'currency',
+                        currency: 'USD',
+                        maximumFractionDigits
+                    })
+                    : '—';
+            };
+
+            const rentRowsByProperty = {
+                'dragon drive': ['$2', '$4', '$10', '$30', '$90', '$160', '$250'],
+                'circus circle': ['$4', '$8', '$20', '$60', '$180', '$320', '$450'],
+                'oriental avuene': ['$6', '$12', '$30', '$90', '$270', '$400', '$550'],
+                'vermont avuene': ['$6', '$12', '$30', '$90', '$270', '$400', '$550'],
+                'canary court': ['$8', '$16', '$40', '$100', '$300', '$450', '$600'],
+                'plumpy place': ['$14', '$28', '$70', '$200', '$550', '$750', '$950'],
+                'grouch street': ['$14', '$28', '$70', '$200', '$550', '$750', '$950'],
+                'rudy road': ['$16', '$32', '$80', '$220', '$600', '$800', '$1,000'],
+                'lavender avenue': ['$18', '$36', '$90', '$250', '$700', '$875', '$1,050'],
+                'tulip terrance': ['$18', '$36', '$90', '$250', '$700', '$875', '$1,050'],
+                'daisy drive': ['$20', '$40', '$100', '$300', '$750', '$925', '$1,100'],
+                'empire court': ['$22', '$44', '$110', '$330', '$800', '$975', '$1,150'],
+                'grove street': ['$22', '$44', '$110', '$330', '$800', '$975', '$1,150'],
+                'loopy lane': ['$24', '$48', '$120', '$360', '$850', '$1,025', '$1,200'],
+                'sunset boulevard': ['$26', '$52', '$130', '$390', '$900', '$1,100', '$1,275'],
+                'perplexing pass': ['$26', '$52', '$130', '$390', '$900', '$1,100', '$1,275'],
+                'atlantic avuene': ['$28', '$56', '$150', '$450', '$1,000', '$1,200', '$1,400'],
+                'gump grove': ['$30', '$60', '$150', '$450', '$1,000', '$1,200', '$1,400'],
+                'potato place': ['$30', '$60', '$150', '$450', '$1,000', '$1,200', '$1,400'],
+                'lip lane': ['$32', '$64', '$160', '$480', '$1,100', '$1,300', '$1,500'],
+                'park place': ['$35', '$70', '$175', '$500', '$1,100', '$1,300', '$1,500'],
+                'boardwalk': ['$50', '$100', '$200', '$600', '$1,400', '$1,700', '$2,000']
+            };
+            const rentLabels = [
+                'Rent',
+                'Rent with color set',
+                'Rent with 1 house',
+                'Rent with 2 houses',
+                'Rent with 3 houses',
+                'Rent with 4 houses',
+                'Rent with hotel'
+            ];
+
+            document.getElementById('property-card-band').style.backgroundColor =
+                boardSpace?.color || '#888888';
+            document.getElementById('property-card-name').textContent =
+                property.property_name;
+            const details = document.getElementById('property-card-details');
+            details.replaceChildren();
+            const buildingDetails = document.getElementById(
+                'property-card-building-details'
+            );
+            buildingDetails.replaceChildren();
+            const buildingCostsByColor = {
+                '#9556a5': 50,
+                '#75b9e7': 50,
+                '#800000': 100,
+                '#f49ac1': 100,
+                '#f79436': 150,
+                '#ed4545': 150,
+                '#f5d34d': 200,
+                '#1134a6': 200
+            };
+
+            const baseRent = Number(property.rent);
+            const detailRows = [['Purchase price', money(property.price)]];
+            const rentRows = rentRowsByProperty[normalizeName(property.property_name)];
+
+            if (rentRows) {
+                rentRows.forEach((value, index) => {
+                    detailRows.push([rentLabels[index], value]);
+                });
+            } else if (/railroad|short line/i.test(property.property_name)) {
+                detailRows.push(['Rent', '$25']);
+                detailRows.push(['Rent with 2 railroads', '$50']);
+                detailRows.push(['Rent with 3 railroads', '$100']);
+                detailRows.push(['Rent with 4 railroads', '$200']);
+            } else if (/electric company|water works/i.test(property.property_name)) {
+                detailRows.push(['Rent with 1 utility', '4 × dice roll']);
+                detailRows.push(['Rent with 2 utilities', '10 × dice roll']);
+            } else if (Number.isFinite(baseRent)) {
+                detailRows.push(['Rent', money(baseRent)]);
+            }
+
+            if (Number(property.mortgaged)) {
+                detailRows.push(['Status', 'Mortgaged']);
+            }
+
+            detailRows.forEach(([label, value]) => {
+                if (value === '—') return;
+
+                const term = document.createElement('dt');
+                term.textContent = label;
+
+                const description = document.createElement('dd');
+                description.textContent = value;
+
+                details.append(term, description);
+            });
+
+            const buildingRows = [];
+            const fallbackBuildingCost = buildingCostsByColor[
+                boardSpace?.color?.toLowerCase()
+            ];
+            const houseCost = property.house_cost ?? fallbackBuildingCost;
+            const hotelCost = property.hotel_cost ?? fallbackBuildingCost;
+
+            if (houseCost !== undefined) {
+                buildingRows.push(['Houses cost each', money(houseCost, 0)]);
+            }
+            if (hotelCost !== undefined) {
+                buildingRows.push([
+                    'Hotels cost each (with 4 houses)',
+                    money(hotelCost, 0)
+                ]);
+            }
+            if (Number(property.houses) > 0) {
+                buildingRows.push(['Houses owned', property.houses]);
+            }
+            if (Number(property.hotels) > 0) {
+                buildingRows.push(['Hotels owned', property.hotels]);
+            }
+
+            buildingRows.forEach(([label, value]) => {
+                const term = document.createElement('dt');
+                term.textContent = label;
+
+                const description = document.createElement('dd');
+                description.textContent = value;
+
+                buildingDetails.append(term, description);
+            });
+            document.getElementById('property-card-building-costs-section').hidden =
+                buildingRows.length === 0;
+
+            if (!propertyCardDialog.open) {
+                propertyCardDialog.showModal();
+            }
+        }
+
         function displayPlayerCards(players, ownedPropertyRows = []) {
             const playerCards = [
                 document.getElementById('player-card-1'),
@@ -2085,8 +2512,136 @@ placeBidButton.addEventListener('click', async () => {
                 const playerProperties = ownedPropertyRows.filter(
                     property => Number(property.player_id) === Number(player.player_id)
                 );
-                const propertiesSummary = document.createElement('p');
-                propertiesSummary.textContent = 'Properties: ' + playerProperties.length;
+                const propertiesTab = document.createElement('details');
+                propertiesTab.className = 'owned-properties-tab';
+
+                const propertiesTabLabel = document.createElement('summary');
+                propertiesTabLabel.textContent = `Properties (${playerProperties.length})`;
+
+                const propertiesList = document.createElement('ul');
+                propertiesList.className = 'owned-properties-list';
+
+                if (playerProperties.length === 0) {
+                    const emptyMessage = document.createElement('li');
+                    emptyMessage.className = 'owned-properties-empty';
+                    emptyMessage.textContent = 'No properties owned yet.';
+                    propertiesList.append(emptyMessage);
+                } else {
+                    const colorSetNames = {
+                        '#9556a5': 'Purple Set',
+                        '#75b9e7': 'Light Blue Set',
+                        '#f49ac1': 'Pink Set',
+                        '#f79436': 'Orange Set',
+                        '#ed4545': 'Red Set',
+                        '#800000': 'Maroon Set',
+                        '#f5d34d': 'Yellow Set',
+                        '#1134a6': 'Dark Blue Set'
+                    };
+                    const railroadNames = new Set([
+                        'short line',
+                        'pennslyvania railroad',
+                        'b&o railroad',
+                        'reading railroad'
+                    ]);
+                    const utilityNames = new Set([
+                        'electric company',
+                        'water works'
+                    ]);
+                    const normalizeName = name =>
+                        String(name || '').trim().toLowerCase();
+                    const orderedProperties = [...playerProperties].sort((a, b) => {
+                        const aPosition = boardSpaces.findIndex(
+                            space => normalizeName(space.name) === normalizeName(a.property_name)
+                        );
+                        const bPosition = boardSpaces.findIndex(
+                            space => normalizeName(space.name) === normalizeName(b.property_name)
+                        );
+                        return (aPosition < 0 ? Infinity : aPosition) -
+                            (bPosition < 0 ? Infinity : bPosition);
+                    });
+                    const groups = new Map();
+
+                    orderedProperties.forEach(property => {
+                        const normalizedName = normalizeName(property.property_name);
+                        const boardSpace = boardSpaces.find(
+                            space => normalizeName(space.name) === normalizedName
+                        );
+                        const groupLabel = railroadNames.has(normalizedName)
+                            ? 'Railroads'
+                            : utilityNames.has(normalizedName)
+                                ? 'Utilities'
+                                : colorSetNames[boardSpace?.color?.toLowerCase()] || 'Other';
+                        const groupColor = groupLabel === 'Railroads'
+                            ? '#222222'
+                            : groupLabel === 'Utilities'
+                                ? '#aaaaaa'
+                                : boardSpace?.color || '#888888';
+
+                        if (!groups.has(groupLabel)) {
+                            groups.set(groupLabel, {
+                                color: groupColor,
+                                properties: []
+                            });
+                        }
+
+                        groups.get(groupLabel).properties.push({ property, boardSpace });
+                    });
+
+                    groups.forEach((group, groupLabel) => {
+                        const groupItem = document.createElement('li');
+                        groupItem.className = 'owned-property-group';
+
+                        const heading = document.createElement('div');
+                        heading.className = 'owned-property-group-heading';
+
+                        const swatch = document.createElement('span');
+                        swatch.className = 'owned-property-group-swatch';
+                        swatch.style.backgroundColor = group.color;
+                        swatch.setAttribute('aria-hidden', 'true');
+
+                        const headingLabel = document.createElement('strong');
+                        headingLabel.textContent = groupLabel;
+                        heading.append(swatch, headingLabel);
+
+                        const groupList = document.createElement('ul');
+                        groupList.className = 'owned-property-group-items';
+
+                        group.properties.forEach(({ property, boardSpace }) => {
+                            const item = document.createElement('li');
+                            const propertyButton = document.createElement('button');
+                            propertyButton.type = 'button';
+                            propertyButton.className = 'owned-property-item';
+
+                            const sprite = document.createElement('span');
+                            sprite.className = 'owned-property-sprite';
+                            sprite.style.backgroundColor = boardSpace?.color || group.color;
+                            sprite.setAttribute('aria-hidden', 'true');
+
+                            const propertyName = document.createElement('span');
+                            propertyName.className = 'owned-property-name';
+                            propertyName.textContent = property.property_name;
+                            propertyButton.append(sprite, propertyName);
+
+                            if (boardSpace?.price !== undefined) {
+                                const propertyPrice = document.createElement('span');
+                                propertyPrice.className = 'owned-property-price';
+                                propertyPrice.textContent = `$${boardSpace.price}`;
+                                propertyButton.append(propertyPrice);
+                            }
+
+                            propertyButton.addEventListener('click', () => {
+                                showPropertyCard(property);
+                            });
+                            item.append(propertyButton);
+                            groupList.append(item);
+                        });
+
+                        groupItem.append(heading, groupList);
+                        propertiesList.append(groupItem);
+                    });
+                }
+
+                propertiesTab.append(propertiesTabLabel, propertiesList);
 
                 const improvements = document.createElement('p');
                 improvements.textContent = 'Houses / hotels: 0';
@@ -2094,8 +2649,8 @@ placeBidButton.addEventListener('click', async () => {
                 card.append(
                     name,
                     money,
-                    propertiesSummary,
-                    improvements
+                    improvements,
+                    propertiesTab
                 );
 
                 card.hidden = false;
