@@ -705,6 +705,47 @@
             transform: translateY(-8px) rotate(-35deg);
         }
 
+        .card-deck-spots {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .card-deck-spot {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: clamp(120px, 27%, 210px);
+            aspect-ratio: 1.45 / 1;
+            padding: 7px;
+            box-sizing: border-box;
+            border: 3px dotted #17251c;
+            transform: rotate(-45deg);
+        }
+
+        .card-deck-spot img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .community-chest-deck-spot {
+            top: 10%;
+            left: 7%;
+        }
+
+        .community-chest-deck-spot img {
+            transform: rotate(180deg);
+        }
+
+        .chance-deck-spot {
+            right: 7%;
+            bottom: 8%;
+        }
+
         #property-purchase-menu {
             position: absolute;
             z-index: 20;
@@ -1046,6 +1087,20 @@
             color: #26352b;
             text-align: center;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        }
+
+        .chance-card-dialog.community-chest-dialog {
+            border-color: #07172b;
+            background: #0b1f3a;
+            color: #ffffff;
+        }
+
+        .community-chest-dialog .chance-card-kicker {
+            color: #9bc9f5;
+        }
+
+        .community-chest-dialog #chance-card-continue {
+            background: #244f78;
         }
 
         .chance-card-dialog::backdrop {
@@ -1460,6 +1515,20 @@
         <div class="game-board" id="game-board">
             <div class="board-center">
                 <h2 class="center-logo">ONLINEOPOLY</h2>
+                <div class="card-deck-spots" aria-label="Card deck spaces">
+                    <div class="card-deck-spot community-chest-deck-spot">
+                        <img
+                            src="/Game/sprites/Communitychestcard.jpg"
+                            alt="Community Chest cards"
+                        >
+                    </div>
+                    <div class="card-deck-spot chance-deck-spot">
+                        <img
+                            src="/Game/sprites/chancecard.jpg"
+                            alt="Chance cards"
+                        >
+                    </div>
+                </div>
 
             <div id="game-controls">
         <p id="current-turn-indicator">Loading turn...</p>
@@ -1553,7 +1622,7 @@
             aria-labelledby="chance-card-title"
         >
             <div class="chance-card-content">
-                <p class="chance-card-kicker">CHANCE</p>
+                <p id="chance-card-kicker" class="chance-card-kicker">CHANCE</p>
                 <h2 id="chance-card-title"></h2>
                 <p id="chance-card-message"></p>
                 <button id="chance-card-continue" type="button">
@@ -1578,10 +1647,9 @@
             return;
         }
 
-        const rolledDoubles = move.dice.die1 === move.dice.die2;
         diceResult.textContent =
             `${move.playerName} rolled a ${move.dice.die1} and a ` +
-            `${move.dice.die2}: ${rolledDoubles ? 'Doubles' : 'Not Doubles'}.`;
+            `${move.dice.die2}.`;
 
         await loadPlayerTokens();
     });
@@ -1804,6 +1872,7 @@ socket.on('auctionFinished', async (data) => {
         });
 
         const chanceCardDialog = document.getElementById('chance-card-dialog');
+        const chanceCardKicker = document.getElementById('chance-card-kicker');
         const chanceCardTitle = document.getElementById('chance-card-title');
         const chanceCardMessage = document.getElementById('chance-card-message');
         const chanceCardContinue = document.getElementById('chance-card-continue');
@@ -1812,7 +1881,7 @@ socket.on('auctionFinished', async (data) => {
             chanceCardDialog.close();
         });
 
-        function showChanceCardPopup(card) {
+        function showChanceCardPopup(card, cardDeckName) {
             if (!card) {
                 return Promise.resolve();
             }
@@ -1822,6 +1891,11 @@ socket.on('auctionFinished', async (data) => {
                 .map(word => word[0].toUpperCase() + word.slice(1))
                 .join(' ');
 
+            chanceCardKicker.textContent = cardDeckName || 'Chance';
+            chanceCardDialog.classList.toggle(
+                'community-chest-dialog',
+                cardDeckName === 'Community Chest'
+            );
             chanceCardTitle.textContent = cardName;
 
             if (card.type === 'collect') {
@@ -1973,13 +2047,11 @@ socket.on('auctionFinished', async (data) => {
             throw new Error(data.message || 'Could not roll dice.');
         }
 
-        await showChanceCardPopup(data.chanceCard);
+        await showChanceCardPopup(data.chanceCard, data.cardDeckName);
 
 
-        const rolledDoubles = data.dice.die1 === data.dice.die2;
         const rollMessage =
-            `You rolled a ${data.dice.die1} and a ${data.dice.die2}: ` +
-            `${rolledDoubles ? '(Doubles)' : '(Not Doubles)'}.`;
+            `You rolled a ${data.dice.die1} and a ${data.dice.die2}.`;
         const outcomeMessage = data.jailBailPaid
             ? 'You paid $50 bail and left Jail.'
             : data.jailAttempt

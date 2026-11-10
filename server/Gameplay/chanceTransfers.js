@@ -161,7 +161,7 @@ function applyPlayerTransferCard(db, gameId, currentPlayerId, card, callback) {
                                     [
                                         gameId,
                                         change.amount,
-                                        'Chance Card Transfer',
+                                        `${card.deckName || 'Chance'} Card Transfer`,
                                         change.playerId
                                     ],
                                     insertErr => {

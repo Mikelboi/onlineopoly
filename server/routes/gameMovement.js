@@ -6,6 +6,7 @@ const {
 const { updatePlayerMoney } = require('../Gameplay/money');
 const { payRent } = require('../Gameplay/properties');
 const chanceCards = require('../Gameplay/chance');
+const communityChestCards = require('../Gameplay/communityChest');
 
 const {
     applyPlayerTransferCard
@@ -204,6 +205,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                             let dice;
                             let newPosition;
                             let chanceCard = null;
+                            let cardDeckName = null;
                             let passedGo = false;
                             let sendToJail = false;
                             let releaseFromJail = false;
@@ -274,9 +276,29 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                 );
                                 const landedOnGoToJail = newPosition === 30;
                                 const chanceCardPositions = [7, 22, 36];
-                                chanceCard = chanceCardPositions.includes(newPosition)
-                                    ? chanceCards[Math.floor(Math.random() * chanceCards.length)]
-                                    : null;
+                                const communityChestPositions = [2, 17, 33];
+
+                                if (chanceCardPositions.includes(newPosition)) {
+                                    cardDeckName = 'Chance';
+                                    chanceCard = {
+                                        ...chanceCards[
+                                            Math.floor(Math.random() * chanceCards.length)
+                                        ],
+                                        deckName: cardDeckName
+                                    };
+                                } else if (
+                                    communityChestPositions.includes(newPosition)
+                                ) {
+                                    cardDeckName = 'Community Chest';
+                                    chanceCard = {
+                                        ...communityChestCards[
+                                            Math.floor(
+                                                Math.random() * communityChestCards.length
+                                            )
+                                        ],
+                                        deckName: cardDeckName
+                                    };
+                                }
                                 passedGo =
                                     Number(player.position) + dice.total >= 40;
 
@@ -311,7 +333,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
 
                                     if (!targets) {
                                         throw new Error(
-                                            'Invalid nearest-space Chance card target.'
+                                            `Invalid nearest-space ${cardDeckName} card target.`
                                         );
                                     }
 
@@ -473,6 +495,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                     passedGo,
                                                     sentToJail: sendToJail,
                                                     chanceCard,
+                                                    cardDeckName,
                                                     jailBailPaid: jailBailRequired,
                                                     rent: rentResult
                                                 });
@@ -546,7 +569,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                         );
                                                         sendJson(res, 500, {
                                                             message:
-                                                                'Movement succeeded, but the Chance card transfer could not be completed.'
+                                                                `Movement succeeded, but the ${cardDeckName} card transfer could not be completed.`
                                                         });
                                                         return;
                                                     }
@@ -595,7 +618,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                         Number(player.player_id),
                                                         Number(gameId),
                                                         -repairCost,
-                                                        'Chance Repairs',
+                                                        `${cardDeckName} Repairs`,
                                                         repairMoneyErr => {
                                                             if (repairMoneyErr) {
                                                                 console.error(
@@ -634,7 +657,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                             Number(player.player_id),
                                             Number(gameId),
                                             amount,
-                                            'Chance Card',
+                                            `${cardDeckName} Card`,
                                             chanceErr => {
                                                 if (chanceErr) {
                                                     console.error(
@@ -643,7 +666,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                     );
                                                     sendJson(res, 500, {
                                                         message:
-                                                            'Movement succeeded, but the Chance card could not be applied.'
+                                                            `Movement succeeded, but the ${cardDeckName} card could not be applied.`
                                                     });
                                                     return;
                                                 }
