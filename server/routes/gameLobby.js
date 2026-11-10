@@ -468,7 +468,7 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                 }
 
                 db.query(
-                    `SELECT player_id, user_id, player_name, money, position, token_type
+                    `SELECT player_id, user_id, player_name, money, position, token_type,  is_in_jail, jail_free_cards, jail_turns
                      FROM Player
                      WHERE game_id = ?
                      ORDER BY player_id`,
@@ -524,6 +524,7 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                                     `SELECT
                                         Property.property_id,
                                         Property.property_name,
+                                        Property.board_position,
                                         Property.property_type,
                                         Property.price,
                                         Property.rent,

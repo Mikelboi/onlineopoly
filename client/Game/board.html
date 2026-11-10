@@ -224,7 +224,7 @@
             background-color: black; /* Changed to black so the gaps act as dark borders */
             box-sizing: border-box;
         }
-        
+
         #roll-dice {
             display: none;
         }
@@ -239,11 +239,11 @@
             flex-direction: column;
             align-items: center;
             justify-content: space-between;
-            
+
             width: 100%;
             height: 100%;
             box-sizing: border-box;
-            overflow: hidden; 
+            overflow: hidden;
             padding: 4px;
             background-color: #FFEBCD; /* Gives tiles their distinct background to reveal dividers */
         }
@@ -266,7 +266,7 @@
             border: none;
         }
 
-    
+
 
         .top-space {
             padding-bottom: calc(24% + 4px);
@@ -332,7 +332,7 @@
             height: 100%;
             max-width: 100%;
             max-height: 100%; /* Caps image canvas size to save rows for titles */
-            object-fit: cover; 
+            object-fit: cover;
             z-index: 1;
         }
 
@@ -340,7 +340,7 @@
             transform: rotate(90deg);
         }
 
-        .left-space, 
+        .left-space,
         .right-space {
             position: relative;
             overflow: hidden;
@@ -430,11 +430,11 @@
             height: 100%;
         }
         /* Text styles to prevent overflowing */
-        .board-space p, 
-        .board-space span, 
+        .board-space p,
+        .board-space span,
         .board-space .title {
             margin: 2px 0;
-            font-size: clamp(8px, 1.2vw, 12px); 
+            font-size: clamp(8px, 1.2vw, 12px);
             text-align: center;
             line-height: 1.2;
             z-index: 2;
@@ -546,8 +546,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: space-between; 
-            transform: none; 
+            justify-content: space-between;
+            transform: none;
             z-index: 2;
         }
 
@@ -583,7 +583,7 @@
             color: #17251b;
             text-shadow: 0 0 1px rgba(0, 0, 0, 0.25);
         }
-        
+
         .left-space .space-price,
         .left-space .space-instruction {
             position: relative;
@@ -592,7 +592,7 @@
             font-weight: 800;
             text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
         }
-        
+
 
         .top-space .space-name,
         .top-space .space-price,
@@ -608,7 +608,7 @@
             top: -4px;
         }
 
-        
+
         .left-space .space-name {
             font-size: clamp(9px, 0.85vw, 11px);
         }
@@ -677,7 +677,7 @@
             font-size: clamp(10px, 1.2vw, 16px);
             line-height: 1;
             margin-bottom: 3px;
-        }   
+        }
 
         /* ========================================
            7. BOARD CENTER POSITIONING
@@ -691,7 +691,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            
+
             background-color: #d8f0dc; /* Original green background for the game center canvas */
             position: relative;
         }
@@ -761,7 +761,7 @@
             appearance: textfield;
         }
 
-        
+
         /* Rent popup */
         #rent-popup[hidden] {
             display: none;
@@ -1037,6 +1037,51 @@
             text-align: right;
         }
 
+        .chance-card-dialog {
+            width: min(90vw, 360px);
+            padding: 0;
+            border: 3px solid #c62828;
+            border-radius: 14px;
+            background: #fffdf3;
+            color: #26352b;
+            text-align: center;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        }
+
+        .chance-card-dialog::backdrop {
+            background: rgba(20, 30, 22, 0.58);
+        }
+
+        .chance-card-content {
+            padding: 24px;
+        }
+
+        .chance-card-kicker {
+            margin: 0 0 10px;
+            color: #c62828;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+
+        .chance-card-content h2 {
+            margin: 0 0 12px;
+        }
+
+        .chance-card-content p {
+            margin: 0 0 20px;
+        }
+
+        #chance-card-continue {
+            padding: 9px 22px;
+            border: 0;
+            border-radius: 6px;
+            background: #c62828;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
 
         /* Color definitions for property bars */
         .color-brown { background-color: #955436; }
@@ -1051,7 +1096,7 @@
         /* ========================================
            8. PLAYER TOKENS
         ======================================== */
-        
+
         .player-tokens {
             display: flex;
             flex-wrap: wrap;
@@ -1074,6 +1119,33 @@
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid #888;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .board-space[data-position="10"] .player-tokens {
+            position: absolute;
+            top: 50%;
+            z-index: 5;
+            width: 40%;
+            height: 48%;
+            align-content: center;
+            transform: translateY(-50%);
+        }
+
+        .board-space[data-position="10"] .jail-inmates {
+            top: 2%;
+            right: 2%;
+            width: 68%;
+            height: 68%;
+            transform: none;
+        }
+
+        .board-space[data-position="10"] .jail-visitors {
+            top: auto;
+            left: 2%;
+            bottom: 2%;
+            width: 34%;
+            height: 28%;
+            transform: none;
         }
 
 
@@ -1214,7 +1286,7 @@
                 object-fit: cover;
             }
 
-        
+
             .board-space.image-only-space,
             .board-space.image-only-space.bottom-space,
             .board-space.image-only-space.top-space,
@@ -1364,7 +1436,7 @@
                 color: #e2a286 !important;
             }
 
-            
+
         }
 
         .board-space.left-space.image-only-space .space-content img[src*="Pennsyl.jpg"],
@@ -1375,7 +1447,7 @@
 
     </style>
 </head>
-<body> 
+<body>
 
     <div class="game-layout">
 
@@ -1392,8 +1464,11 @@
             <div id="game-controls">
         <p id="current-turn-indicator">Loading turn...</p>
         <p id="diceResult">Roll the dice to move!</p>
+        <button id="use-jail-card-button" type="button" hidden>
+            Use Get Out of Jail Free Card
+        </button>
     </div>
-            
+
         <div id="property-purchase-menu" hidden>
             <h2 id="purchase-property-name"></h2>
             <p id="purchase-property-price"></p>
@@ -1471,15 +1546,30 @@
                 </section>
             </div>
         </dialog>
+
+        <dialog
+            id="chance-card-dialog"
+            class="chance-card-dialog"
+            aria-labelledby="chance-card-title"
+        >
+            <div class="chance-card-content">
+                <p class="chance-card-kicker">CHANCE</p>
+                <h2 id="chance-card-title"></h2>
+                <p id="chance-card-message"></p>
+                <button id="chance-card-continue" type="button">
+                    Continue
+                </button>
+            </div>
+        </dialog>
         </div>
         </section>
-   
+
     </section>
     <h1></h1>
     </section>
 
     <script src="/socket.io/socket.io.js"></script>
-    
+
 <script>
     const socket = io();
 
@@ -1488,8 +1578,10 @@
             return;
         }
 
+        const rolledDoubles = move.dice.die1 === move.dice.die2;
         diceResult.textContent =
-            `${move.playerName} rolled a ${move.diceTotal} `;
+            `${move.playerName} rolled a ${move.dice.die1} and a ` +
+            `${move.dice.die2}: ${rolledDoubles ? 'Doubles' : 'Not Doubles'}.`;
 
         await loadPlayerTokens();
     });
@@ -1539,7 +1631,7 @@
 
             await loadPlayerTokens();
         });
-    
+
 
 let auctionTimer = null;
 let auctionFinishRequested = false;
@@ -1634,7 +1726,7 @@ function startAuctionCountdown(endsAt, propertyName) {
     }
 }
 
-        
+
         socket.on('auctionStarted', (data) => {
             if (Number(data.gameId) !== Number(gameId)) return;
 
@@ -1662,7 +1754,7 @@ function startAuctionCountdown(endsAt, propertyName) {
                 `Highest bidder: ${data.highestBidderName} ($${data.highestBid}).`;
         });
 
-       
+
 socket.on('auctionFinished', async (data) => {
     if (Number(data.gameId) !== Number(gameId)) {
         return;
@@ -1711,6 +1803,82 @@ socket.on('auctionFinished', async (data) => {
             propertyCardDialog.close();
         });
 
+        const chanceCardDialog = document.getElementById('chance-card-dialog');
+        const chanceCardTitle = document.getElementById('chance-card-title');
+        const chanceCardMessage = document.getElementById('chance-card-message');
+        const chanceCardContinue = document.getElementById('chance-card-continue');
+
+        chanceCardContinue.addEventListener('click', () => {
+            chanceCardDialog.close();
+        });
+
+        function showChanceCardPopup(card) {
+            if (!card) {
+                return Promise.resolve();
+            }
+
+            const cardName = card.id
+                .split('-')
+                .map(word => word[0].toUpperCase() + word.slice(1))
+                .join(' ');
+
+            chanceCardTitle.textContent = cardName;
+
+            if (card.type === 'collect') {
+                chanceCardMessage.textContent = `Collect $${card.amount}.`;
+            } else if (card.type === 'pay') {
+                chanceCardMessage.textContent = `Pay $${card.amount}.`;
+            } else if (card.type === 'pay_repairs') {
+                chanceCardMessage.textContent =
+                    `Pay $${card.houseCost} for each house and ` +
+                    `$${card.hotelCost} for each hotel you own.`;
+            } else if (card.type === 'pay_each_player') {
+                chanceCardMessage.textContent =
+                    `Pay $${card.amount} to each other player.`;
+            } else if (card.type === 'collect_each_player') {
+                chanceCardMessage.textContent =
+                    `Collect $${card.amount} from each other player.`;
+            } else if (card.type === 'move_to') {
+                const destinationNames = {
+                    0: 'GO',
+                    31: 'Gump Grove',
+                    39: 'Boardwalk'
+                };
+                const destinationName =
+                    destinationNames[card.position] ||
+                    `space ${card.position}`;
+
+                chanceCardMessage.textContent = card.collectGo
+                    ? `Advance to ${destinationName} and collect $200.`
+                    : `Advance to ${destinationName}.`;
+            } else if (card.type === 'move_relative') {
+                chanceCardMessage.textContent =
+                    `Move ${Math.abs(card.spaces)} spaces ` +
+                    `${card.spaces < 0 ? 'back' : 'forward'}.`;
+            } else if (card.type === 'move_to_nearest') {
+                const rentRule = card.target === 'railroad'
+                    ? `${card.rentMultiplier} times the railroad's normal rent`
+                    : `${card.rentMultiplier} times the dice roll`;
+
+                chanceCardMessage.textContent =
+                    `Advance to the nearest ${card.target}. If owned, pay ${rentRule}.`;
+            } else if (card.type === 'go_to_jail') {
+                chanceCardMessage.textContent = 'Move directly to Jail.';
+            } else if (card.type === 'get_out_of_jail_free') {
+                chanceCardMessage.textContent =
+                    'Keep this card to use when you need to leave Jail.';
+            } else {
+                chanceCardMessage.textContent =
+                    'The effect for this card will be added in a later step.';
+            }
+
+            chanceCardDialog.showModal();
+
+            return new Promise(resolve => {
+                chanceCardDialog.addEventListener('close', resolve, { once: true });
+            });
+        }
+
         const propertyPurchaseMenu = document.getElementById('property-purchase-menu');
         const purchasePropertyName = document.getElementById('purchase-property-name');
         const purchasePropertyPrice = document.getElementById('purchase-property-price');
@@ -1724,7 +1892,48 @@ socket.on('auctionFinished', async (data) => {
         const auctionBidMessage = document.getElementById('auction-bid-message');
         const auctionCountdown = document.getElementById('auction-countdown');
         const auctionHighestBidder = document.getElementById('auction-highest-bidder');
-                        
+
+        const useJailCardButton =
+            document.getElementById('use-jail-card-button');
+
+        useJailCardButton.addEventListener('click', async event => {
+            event.stopPropagation();
+
+            if (isRolling) return;
+
+            const params = new URLSearchParams(window.location.search);
+            const gameId = params.get('gameId') || document.body.dataset.gameId;
+
+            if (!gameId) {
+                diceResult.textContent = 'Game ID is missing.';
+                return;
+            }
+
+            useJailCardButton.disabled = true;
+
+            try {
+                const response = await fetch('/games/use-jail-card', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ gameId })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Could not use the Jail card.');
+                }
+
+                diceResult.textContent = data.message;
+            } catch (error) {
+                diceResult.textContent = error.message;
+            } finally {
+                useJailCardButton.disabled = false;
+                await loadPlayerTokens();
+            }
+        });
 
         async function rollDice() {
         if (isRolling) return;
@@ -1740,7 +1949,7 @@ socket.on('auctionFinished', async (data) => {
             diceResult.textContent = 'Rolling dice...';
 
 
-        
+
 
     try {
         const params = new URLSearchParams(window.location.search);
@@ -1764,8 +1973,24 @@ socket.on('auctionFinished', async (data) => {
             throw new Error(data.message || 'Could not roll dice.');
         }
 
-       
-        diceResult.textContent = `You rolled a ${data.dice.total}`;
+        await showChanceCardPopup(data.chanceCard);
+
+
+        const rolledDoubles = data.dice.die1 === data.dice.die2;
+        const rollMessage =
+            `You rolled a ${data.dice.die1} and a ${data.dice.die2}: ` +
+            `${rolledDoubles ? '(Doubles)' : '(Not Doubles)'}.`;
+        const outcomeMessage = data.jailBailPaid
+            ? 'You paid $50 bail and left Jail.'
+            : data.jailAttempt
+                ? `${data.message} (attempt ${data.jailAttempt} of 3).`
+                : !data.message
+                    ? ''
+                    : data.message;
+
+        diceResult.textContent = outcomeMessage
+            ? `${rollMessage} ${outcomeMessage}`
+            : rollMessage;
 
         const gameData = await loadPlayerTokens();
 
@@ -1898,7 +2123,7 @@ auctionPropertyButton.addEventListener('click', async (event) => {
         diceResult.textContent = 'Could not start the auction.';
     }
 });
-    
+
 
 
 placeBidButton.addEventListener('click', async () => {
@@ -1964,7 +2189,7 @@ placeBidButton.addEventListener('click', async () => {
             { name: "Electric Company", color: "#aaaaaa", price: 150, image: "/Game/sprites/electric.jpg" },
             { name: "Grouch Street", color: "#800000", price: 140 },
             { name: "Rudy Road", color: "#800000", price: 160 },
-            { name: "Pennslyvania Railroad ", color: "#222222", price: 200, image: "/Game/sprites/Pennsyl.jpg"},
+            { name: "Pennsylvania Railroad", color: "#222222", price: 200, image: "/Game/sprites/Pennsyl.jpg"},
             { name: "Lavender Avenue", color: "#f49ac1", price: 180 },
             { name: "Community Chest", type: "special", image: "/Game/sprites/CommunityChest.jpg" },
             { name: "Tulip Terrance", color: "#f49ac1", price: 180 },
@@ -2005,9 +2230,9 @@ placeBidButton.addEventListener('click', async () => {
         return;
     }
 
-    // Find this property's database record by its name.
+    // Find this property's database record by its board position.
     const property = gameData.properties.find(
-        item => item.property_name === space.name
+        item => Number(item.board_position) === Number(position)
     );
 
     // If the property isn't in the database, don't offer a purchase.
@@ -2033,7 +2258,7 @@ placeBidButton.addEventListener('click', async () => {
 
 }
 
-    
+
     function showRentPopup(rent) {
         const popup = document.getElementById('rent-popup');
 
@@ -2134,7 +2359,7 @@ placeBidButton.addEventListener('click', async () => {
                     "water works",
                     "short line",
                     "reading railroad",
-                    "pennslyvania railroad",
+                    "pennsylvania railroad",
                     "b&o railroad",
                     "chance",
                     "community chest"
@@ -2193,7 +2418,7 @@ placeBidButton.addEventListener('click', async () => {
                 diamond.textContent = "◆";
                 content.appendChild(diamond);
             }
-                
+
                 // Add a sprite when the space has one.
                 if (space.image) {
                     const image = document.createElement("img");
@@ -2245,14 +2470,14 @@ placeBidButton.addEventListener('click', async () => {
             });
         }
 
-        
+
         /* ========================================
            13. INITIALIZE THE BOARD
         ======================================== */
 
         buildBoard();
 
-        
+
         function placePlayerTokens(players) {
             // Remove previously displayed tokens.
             document.querySelectorAll('.player-tokens').forEach(container => {
@@ -2286,11 +2511,23 @@ placeBidButton.addEventListener('click', async () => {
                     return;
                 }
 
-                let container = space.querySelector('.player-tokens');
+                const isJailSpace = Number(player.position) === 10;
+                const isInJail = Number(player.is_in_jail) === 1;
+                const tokenGroupClass = isJailSpace
+                    ? isInJail
+                        ? 'player-tokens jail-inmates'
+                        : 'player-tokens jail-visitors'
+                    : 'player-tokens';
+                const tokenGroupSelector = isJailSpace
+                    ? isInJail
+                        ? '.player-tokens.jail-inmates'
+                        : '.player-tokens.jail-visitors'
+                    : '.player-tokens';
+                let container = space.querySelector(tokenGroupSelector);
 
                 if (!container) {
                     container = document.createElement('div');
-                    container.className = 'player-tokens';
+                    container.className = tokenGroupClass;
                     space.appendChild(container);
                 }
 
@@ -2304,10 +2541,27 @@ placeBidButton.addEventListener('click', async () => {
             });
         }
 
-        
+
+        function isRailroadProperty(property) {
+            const propertyType = String(property.property_type || '')
+                .trim()
+                .toLowerCase();
+            const propertyName = String(property.property_name || '')
+                .trim()
+                .toLowerCase();
+            const railroadPositions = [5, 15, 25, 35];
+
+            return propertyType.includes('railroad') ||
+                /railroad|short line/.test(propertyName) ||
+                railroadPositions.includes(Number(property.board_position));
+        }
+
         function showPropertyCard(property) {
             const normalizeName = name =>
-                String(name || '').trim().toLowerCase();
+                String(name || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/^pennslyvania railroad$/, 'pennsylvania railroad');
             const boardSpace = boardSpaces.find(
                 space => normalizeName(space.name) === normalizeName(property.property_name)
             );
@@ -2382,14 +2636,14 @@ placeBidButton.addEventListener('click', async () => {
             };
 
             const baseRent = Number(property.rent);
-            const detailRows = [['Purchase price', money(property.price)]];
+            const detailRows = [['Purchase price', money(property.price, 0)]];
             const rentRows = rentRowsByProperty[normalizeName(property.property_name)];
 
             if (rentRows) {
                 rentRows.forEach((value, index) => {
                     detailRows.push([rentLabels[index], value]);
                 });
-            } else if (/railroad|short line/i.test(property.property_name)) {
+            } else if (isRailroadProperty(property)) {
                 detailRows.push(['Rent', '$25']);
                 detailRows.push(['Rent with 2 railroads', '$50']);
                 detailRows.push(['Rent with 3 railroads', '$100']);
@@ -2539,7 +2793,7 @@ placeBidButton.addEventListener('click', async () => {
                     };
                     const railroadNames = new Set([
                         'short line',
-                        'pennslyvania railroad',
+                        'pennsylvania railroad',
                         'b&o railroad',
                         'reading railroad'
                     ]);
@@ -2548,7 +2802,10 @@ placeBidButton.addEventListener('click', async () => {
                         'water works'
                     ]);
                     const normalizeName = name =>
-                        String(name || '').trim().toLowerCase();
+                        String(name || '')
+                            .trim()
+                            .toLowerCase()
+                            .replace(/^pennslyvania railroad$/, 'pennsylvania railroad');
                     const orderedProperties = [...playerProperties].sort((a, b) => {
                         const aPosition = boardSpaces.findIndex(
                             space => normalizeName(space.name) === normalizeName(a.property_name)
@@ -2566,7 +2823,9 @@ placeBidButton.addEventListener('click', async () => {
                         const boardSpace = boardSpaces.find(
                             space => normalizeName(space.name) === normalizedName
                         );
-                        const groupLabel = railroadNames.has(normalizedName)
+                        const groupLabel =
+                            isRailroadProperty(property) ||
+                            railroadNames.has(normalizedName)
                             ? 'Railroads'
                             : utilityNames.has(normalizedName)
                                 ? 'Utilities'
@@ -2695,6 +2954,25 @@ placeBidButton.addEventListener('click', async () => {
                 const myPlayer = data.players.find(
                     player => Number(player.user_id) === Number(data.currentUserId)
                 );
+
+                const useJailCardButton =
+                    document.getElementById('use-jail-card-button');
+
+                if (useJailCardButton) {
+                    const isMyTurn =
+                        myPlayer &&
+                        Number(myPlayer.player_id) === Number(currentPlayerId);
+
+                    const hasJailCard =
+                        myPlayer &&
+                        Number(myPlayer.jail_free_cards) > 0;
+
+                    useJailCardButton.hidden = !(
+                        isMyTurn &&
+                        Number(myPlayer.is_in_jail) === 1 &&
+                        hasJailCard
+                    );
+                }
 
                 const popupOpen =
                     !propertyPurchaseMenu.hidden ||

@@ -212,7 +212,7 @@ function purchaseProperty(db, userId, gameId, callback) {
 }
 
 
-function payRent(db, userId, gameId, callback) {
+function payRent(db, userId, gameId, callback, rentOptions = {}) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
         callback(new Error('Invalid user ID.'));
         return;
@@ -295,7 +295,7 @@ function payRent(db, userId, gameId, callback) {
                     const player = players[0];
 
                     connection.query(
-                        `SELECT property_id, property_name, rent
+                        `SELECT property_id, property_name, property_type, rent
                          FROM Property
                          WHERE board_position = ?`,
                         [player.position],
@@ -357,7 +357,16 @@ function payRent(db, userId, gameId, callback) {
                                         return;
                                     }
 
-                                    const rent = Number(property.rent);
+                                    let rent = Number(property.rent);
+                                    const chanceCard = rentOptions.chanceCard;
+
+                                    if (chanceCard && chanceCard.target === 'railroad') {
+                                        rent *= Number(chanceCard.rentMultiplier);
+                                    } else if (chanceCard && chanceCard.target === 'utility') {
+                                        rent =
+                                            Number(rentOptions.diceTotal) *
+                                            Number(chanceCard.rentMultiplier);
+                                    }
 
                                     if (!Number.isFinite(rent) || rent < 0) {
                                         failTransaction(
