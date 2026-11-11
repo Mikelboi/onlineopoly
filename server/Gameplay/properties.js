@@ -295,7 +295,7 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                     const player = players[0];
 
                     connection.query(
-                        `SELECT property_id, property_name, property_type, rent
+                        `SELECT property_id, property_name, board_position, property_type, rent
                          FROM Property
                          WHERE board_position = ?`,
                         [player.position],
@@ -320,7 +320,35 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                     pp.player_id,
                                     p.user_id,
                                     p.player_name,
-                                    u.username
+                                    u.username,
+                                    (
+                                        SELECT COUNT(*)
+                                        FROM Player_Property AS owned_properties
+                                        JOIN Property AS owned_property
+                                            ON owned_property.property_id = owned_properties.property_id
+                                        WHERE owned_properties.player_id = pp.player_id
+                                          AND (
+                                              owned_property.board_position IN (5, 15, 25, 35)
+                                              OR LOWER(owned_property.property_type) LIKE '%railroad%'
+                                              OR LOWER(owned_property.property_name) LIKE '%railroad%'
+                                              OR LOWER(owned_property.property_name) = 'short line'
+                                          )
+                                    ) AS railroad_count,
+                                    (
+                                        SELECT COUNT(*)
+                                        FROM Player_Property AS owned_properties
+                                        JOIN Property AS owned_property
+                                            ON owned_property.property_id = owned_properties.property_id
+                                        WHERE owned_properties.player_id = pp.player_id
+                                          AND (
+                                              owned_property.board_position IN (12, 28)
+                                              OR LOWER(owned_property.property_type) LIKE '%utility%'
+                                              OR LOWER(owned_property.property_name) IN (
+                                                  'electric company',
+                                                  'water works'
+                                              )
+                                          )
+                                    ) AS utility_count
                                  FROM Player_Property pp
                                  JOIN Player p
                                    ON p.player_id = pp.player_id
@@ -357,15 +385,53 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                         return;
                                     }
 
-                                    let rent = Number(property.rent);
+                                    const railroadPositions = [5, 15, 25, 35];
+                                    const utilityPositions = [12, 28];
+                                    const boardPosition = Number(property.board_position);
+                                    const propertyType = String(
+                                        property.property_type || ''
+                                    ).trim().toLowerCase();
+                                    const propertyName = String(
+                                        property.property_name || ''
+                                    ).trim().toLowerCase();
+                                    const isRailroad =
+                                        railroadPositions.includes(boardPosition) ||
+                                        propertyType.includes('railroad') ||
+                                        /railroad|short line/.test(propertyName);
+                                    const isUtility =
+                                        utilityPositions.includes(boardPosition) ||
+                                        propertyType.includes('utility') ||
+                                        /electric company|water works/.test(propertyName);
                                     const chanceCard = rentOptions.chanceCard;
+                                    let rent = Number(property.rent);
 
-                                    if (chanceCard && chanceCard.target === 'railroad') {
-                                        rent *= Number(chanceCard.rentMultiplier);
-                                    } else if (chanceCard && chanceCard.target === 'utility') {
+                                    if (isRailroad) {
+                                        const railroadRents = [0, 25, 50, 100, 200];
+                                        const railroadCount = Math.min(
+                                            4,
+                                            Number(owner.railroad_count)
+                                        );
+
+                                        rent = railroadRents[railroadCount];
+
+                                        if (
+                                            chanceCard &&
+                                            chanceCard.target === 'railroad'
+                                        ) {
+                                            rent *= Number(chanceCard.rentMultiplier);
+                                        }
+                                    } else if (isUtility) {
+                                        const utilityMultiplier =
+                                            chanceCard &&
+                                            chanceCard.target === 'utility'
+                                                ? Number(chanceCard.rentMultiplier)
+                                                : Number(owner.utility_count) >= 2
+                                                    ? 10
+                                                    : 4;
+
                                         rent =
                                             Number(rentOptions.diceTotal) *
-                                            Number(chanceCard.rentMultiplier);
+                                            utilityMultiplier;
                                     }
 
                                     if (!Number.isFinite(rent) || rent < 0) {

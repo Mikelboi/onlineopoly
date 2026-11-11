@@ -742,7 +742,7 @@
         }
 
         .chance-deck-spot {
-            right: 7%;
+            right: 6%;
             bottom: 8%;
         }
 
@@ -1296,6 +1296,11 @@
             font-size: clamp(10px, 1.5vw, 16px);
         }
 
+        .board-center #game-controls {
+            position: relative;
+            z-index: 4;
+        }
+
         .board-space.corner .space-name,
         .board-space.corner-tile .space-name,
         .board-space.corner .space-price,
@@ -1773,7 +1778,7 @@ function startAuctionCountdown(endsAt, propertyName) {
 
         if (secondsLeft > 0) {
             auctionCountdown.textContent =
-                `Auction for ${propertyName}: ${secondsLeft} seconds remaining.`;
+                `Auction for ${propertyName}: ${secondsLeft} seconds.`;
             return;
         }
 
@@ -1803,7 +1808,7 @@ function startAuctionCountdown(endsAt, propertyName) {
             propertyPurchaseMenu.hidden = true;
             auctionBiddingSection.hidden = false;
 
-            auctionBidMessage.textContent = 'Auction started! Place your bid.';
+            auctionBidMessage.textContent = 'Auction started!';
             auctionHighestBidder.textContent = 'Highest bidder: No bids yet.';
             auctionBidAmount.value = '';
 
