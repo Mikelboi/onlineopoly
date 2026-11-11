@@ -1,0 +1,2 @@
+ALTER TABLE Player
+    ADD COLUMN consecutive_doubles TINYINT NOT NULL DEFAULT 0;

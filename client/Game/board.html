@@ -1081,9 +1081,9 @@
         .chance-card-dialog {
             width: min(90vw, 360px);
             padding: 0;
-            border: 3px solid #c62828;
+            border: 3px solid #f7941d;
             border-radius: 14px;
-            background: #fffdf3;
+            background: #fff7e8;
             color: #26352b;
             text-align: center;
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
@@ -1113,7 +1113,7 @@
 
         .chance-card-kicker {
             margin: 0 0 10px;
-            color: #c62828;
+            color: #f7941d;
             font-size: 12px;
             font-weight: bold;
             letter-spacing: 2px;
@@ -1131,7 +1131,7 @@
             padding: 9px 22px;
             border: 0;
             border-radius: 6px;
-            background: #c62828;
+            background: #f7941d;
             color: white;
             font-weight: bold;
             cursor: pointer;
@@ -1869,6 +1869,7 @@ socket.on('auctionFinished', async (data) => {
 
         const diceResult = document.getElementById('diceResult');
         let isRolling = false;
+        let rolledDoubles = false;
         const propertyCardDialog = document.getElementById('property-card-dialog');
         const propertyCardClose = document.getElementById('property-card-close');
 
@@ -2052,6 +2053,8 @@ socket.on('auctionFinished', async (data) => {
             throw new Error(data.message || 'Could not roll dice.');
         }
 
+        rolledDoubles = data.rolledDoubles;
+
         await showChanceCardPopup(data.chanceCard, data.cardDeckName);
 
 
@@ -2079,7 +2082,7 @@ socket.on('auctionFinished', async (data) => {
 
                 showPropertyPurchaseMenu(data.newPosition, gameData);
 
-                if (purchaseMenu.hidden) {
+                if (purchaseMenu.hidden && !rolledDoubles) {
                     await endTurn();
                 }
             }
@@ -2163,7 +2166,9 @@ async function endTurn() {
 
         // Refresh player balances and token positions.
         await loadPlayerTokens();
-        await endTurn();
+        if (!rolledDoubles) {
+            await endTurn();
+        }
 
     } catch (error) {
         diceResult.textContent = error.message;
@@ -2356,6 +2361,12 @@ placeBidButton.addEventListener('click', async () => {
     .addEventListener('click', async () => {
         const popup = document.getElementById('rent-popup');
         const continueButton = document.getElementById('rent-popup-continue');
+
+        if (rolledDoubles) {
+            popup.hidden = true;
+            await loadPlayerTokens();
+            return;
+        }
 
         // Prevent duplicate clicks while ending the turn.
         continueButton.disabled = true;
@@ -2749,25 +2760,39 @@ placeBidButton.addEventListener('click', async () => {
             });
 
             const buildingRows = [];
+            const propertyType = String(property.property_type || '')
+                .trim()
+                .toLowerCase();
+            const propertyName = String(property.property_name || '')
+                .trim()
+                .toLowerCase();
+            const isUtilityProperty =
+                propertyType.includes('utility') ||
+                /electric company|water works/.test(propertyName) ||
+                [12, 28].includes(Number(property.board_position));
+            const canBuildOnProperty =
+                !isRailroadProperty(property) && !isUtilityProperty;
             const fallbackBuildingCost = buildingCostsByColor[
                 boardSpace?.color?.toLowerCase()
             ];
-            const houseCost = property.house_cost ?? fallbackBuildingCost;
-            const hotelCost = property.hotel_cost ?? fallbackBuildingCost;
+            const storedHouseCost = Number(property.house_cost);
+            const houseCost = fallbackBuildingCost ??
+                (storedHouseCost > 0 ? storedHouseCost : undefined);
+            const hotelCost = houseCost !== undefined ? houseCost * 4 : undefined;
 
-            if (houseCost !== undefined) {
-                buildingRows.push(['Houses cost each', money(houseCost, 0)]);
+            if (canBuildOnProperty && houseCost !== undefined) {
+                buildingRows.push(['Price per house', money(houseCost, 0)]);
             }
-            if (hotelCost !== undefined) {
+            if (canBuildOnProperty && hotelCost !== undefined) {
                 buildingRows.push([
-                    'Hotels cost each (with 4 houses)',
+                    'Price per hotel (after 4 houses)',
                     money(hotelCost, 0)
                 ]);
             }
-            if (Number(property.houses) > 0) {
+            if (canBuildOnProperty && Number(property.houses) > 0) {
                 buildingRows.push(['Houses owned', property.houses]);
             }
-            if (Number(property.hotels) > 0) {
+            if (canBuildOnProperty && Number(property.hotels) > 0) {
                 buildingRows.push(['Hotels owned', property.hotels]);
             }
 

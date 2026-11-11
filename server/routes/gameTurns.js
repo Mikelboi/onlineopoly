@@ -1,33 +1,46 @@
 function getNextPlayer(db, gameId, currentPlayerId, callback) {
     db.query(
-        `SELECT player_id
-         FROM Player
-         WHERE game_id = ?
-           AND is_bankrupt = 0
-         ORDER BY player_id ASC`,
-        [gameId],
-        (err, players) => {
-            if (err) {
-                callback(err);
+        `UPDATE Player
+         SET consecutive_doubles = 0
+         WHERE player_id = ? AND game_id = ?`,
+        [currentPlayerId, gameId],
+        resetErr => {
+            if (resetErr) {
+                callback(resetErr);
                 return;
             }
 
-            if (players.length === 0) {
-                callback(new Error('No active players found.'));
-                return;
-            }
+            db.query(
+                `SELECT player_id
+                 FROM Player
+                 WHERE game_id = ?
+                   AND is_bankrupt = 0
+                 ORDER BY player_id ASC`,
+                [gameId],
+                (err, players) => {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
 
-            const currentIndex = players.findIndex(
-                p => Number(p.player_id) === Number(currentPlayerId)
+                    if (players.length === 0) {
+                        callback(new Error('No active players found.'));
+                        return;
+                    }
+
+                    const currentIndex = players.findIndex(
+                        p => Number(p.player_id) === Number(currentPlayerId)
+                    );
+
+                    if (currentIndex === -1) {
+                        callback(new Error('Current player was not found.'));
+                        return;
+                    }
+
+                    const nextIndex = (currentIndex + 1) % players.length;
+                    callback(null, players[nextIndex].player_id);
+                }
             );
-
-            if (currentIndex === -1) {
-                callback(new Error('Current player was not found.'));
-                return;
-            }
-
-            const nextIndex = (currentIndex + 1) % players.length;
-            callback(null, players[nextIndex].player_id);
         }
     );
 }

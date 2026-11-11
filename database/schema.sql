@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`Player` (
   `is_in_jail` TINYINT NOT NULL DEFAULT 0,
   `jail_free_cards` INT NOT NULL DEFAULT 0,
   `jail_turns` TINYINT NOT NULL DEFAULT 0,
+  `consecutive_doubles` TINYINT NOT NULL DEFAULT 0,
   `is_bankrupt` TINYINT NOT NULL DEFAULT 0,
   `user_id` INT NOT NULL,
   `game_id` INT NOT NULL,

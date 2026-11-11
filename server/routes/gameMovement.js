@@ -167,7 +167,8 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                     }
 
                     db.query(
-                        `SELECT player_id, player_name, position,is_in_jail, jail_free_cards,jail_turns
+                        `SELECT player_id, player_name, position,is_in_jail, jail_free_cards,jail_turns,
+                                consecutive_doubles
                          FROM Player
                          WHERE game_id = ? AND user_id = ?`,
                         [gameId, session.userId],
@@ -211,8 +212,22 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                             let releaseFromJail = false;
                             let jailBailRequired = false;
 
+                            const wasInJail = Number(player.is_in_jail) === 1;
+                            let rolledDoubles = false;
+                            let consecutiveDoubles = 0;
+                            let thirdConsecutiveDouble = false;
+
                             try {
                                 dice = rollDice();
+                                const isDoubles = dice.die1 === dice.die2;
+
+                                if (!wasInJail && isDoubles) {
+                                    consecutiveDoubles =
+                                        Number(player.consecutive_doubles) + 1;
+                                    thirdConsecutiveDouble = consecutiveDoubles >= 3;
+                                    rolledDoubles = !thirdConsecutiveDouble;
+                                }
+
                                 if (Number(player.is_in_jail) === 1) {
                                     if (dice.die1 === dice.die2) {
                                         releaseFromJail = true;
@@ -353,6 +368,20 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                     newPosition = 10;
                                     sendToJail = true;
                                 }
+
+                                if (thirdConsecutiveDouble) {
+                                    newPosition = 10;
+                                    passedGo = false;
+                                    sendToJail = true;
+                                    chanceCard = null;
+                                    cardDeckName = null;
+                                    consecutiveDoubles = 0;
+                                }
+
+                                if (sendToJail) {
+                                    rolledDoubles = false;
+                                    consecutiveDoubles = 0;
+                                }
                             } catch (error) {
                                 console.error('Dice roll error:', error);
                                 sendJson(res, 500, {
@@ -364,6 +393,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                             const updatePlayerPosition = () => db.query(
                                 `UPDATE Player
                                  SET position = ?,
+                                     consecutive_doubles = ?,
                                      is_in_jail = CASE
                                          WHEN ? = 1 THEN 1
                                          WHEN ? = 1 THEN 0
@@ -376,6 +406,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                  WHERE player_id = ? AND game_id = ?`,
                                 [
                                     newPosition,
+                                    consecutiveDoubles,
                                     sendToJail ? 1 : 0,
                                     releaseFromJail ? 1 : 0,
                                     sendToJail ? 1 : 0,
@@ -483,13 +514,16 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                         rentResult && rentResult.rentPaid
                                                             ? `You paid $${rentResult.rent} rent for ${rentResult.propertyName}.`
                                                             : sendToJail
-                                                                ? 'You landed on Go To Jail and were sent to Jail.'
+                                                                ? thirdConsecutiveDouble
+                                                                    ? 'You rolled doubles three times in a row and were sent to Jail.'
+                                                                    : 'You landed on Go To Jail and were sent to Jail.'
                                                             : jailBailRequired
                                                                 ? 'You paid $50 bail and left Jail.'
                                                                 : passedGo
                                                                     ? 'You passed GO and collected $200.'
                                                                     : '',
                                                     dice,
+                                                    rolledDoubles,
                                                     oldPosition,
                                                     newPosition,
                                                     passedGo,
