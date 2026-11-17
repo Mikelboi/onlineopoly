@@ -1,3 +1,27 @@
+const PROPERTY_RENT_SCHEDULES = {
+    'dragon drive': [2, 4, 10, 30, 90, 160, 250],
+    'circus circle': [4, 8, 20, 60, 180, 320, 450],
+    'oriental avuene': [6, 12, 30, 90, 270, 400, 550],
+    'vermont avuene': [6, 12, 30, 90, 270, 400, 550],
+    'canary court': [8, 16, 40, 100, 300, 450, 600],
+    'plumpy place': [14, 28, 70, 200, 550, 750, 950],
+    'grouch street': [14, 28, 70, 200, 550, 750, 950],
+    'rudy road': [16, 32, 80, 220, 600, 800, 1000],
+    'lavender avenue': [18, 36, 90, 250, 700, 875, 1050],
+    'tulip terrance': [18, 36, 90, 250, 700, 875, 1050],
+    'daisy drive': [20, 40, 100, 300, 750, 925, 1100],
+    'empire court': [22, 44, 110, 330, 800, 975, 1150],
+    'grove street': [22, 44, 110, 330, 800, 975, 1150],
+    'loopy lane': [24, 48, 120, 360, 850, 1025, 1200],
+    'sunset boulevard': [26, 52, 130, 390, 900, 1100, 1275],
+    'perplexing pass': [26, 52, 130, 390, 900, 1100, 1275],
+    'atlantic avuene': [28, 56, 150, 450, 1000, 1200, 1400],
+    'gump grove': [30, 60, 150, 450, 1000, 1200, 1400],
+    'potato place': [30, 60, 150, 450, 1000, 1200, 1400],
+    'lip lane': [32, 64, 160, 480, 1100, 1300, 1500],
+    'park place': [35, 70, 175, 500, 1100, 1300, 1500],
+    boardwalk: [50, 100, 200, 600, 1400, 1700, 2000]
+};
 
 function purchaseProperty(db, userId, gameId, callback) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
@@ -211,6 +235,373 @@ function purchaseProperty(db, userId, gameId, callback) {
     });
 }
 
+function purchaseBuilding(db, userId, gameId, propertyId, buildingType, callback) {
+    if (
+        !Number.isSafeInteger(Number(userId)) ||
+        !Number.isSafeInteger(Number(gameId)) ||
+        !Number.isSafeInteger(Number(propertyId)) ||
+        !['house', 'hotel'].includes(buildingType)
+    ) {
+        callback(new Error('Invalid building purchase request.'));
+        return;
+    }
+
+    db.getConnection((connectionErr, connection) => {
+        if (connectionErr) {
+            callback(connectionErr);
+            return;
+        }
+
+        connection.beginTransaction(beginErr => {
+            if (beginErr) {
+                connection.release();
+                callback(beginErr);
+                return;
+            }
+
+            let finished = false;
+
+            const failTransaction = error => {
+                if (finished) return;
+                finished = true;
+
+                connection.rollback(() => {
+                    connection.release();
+                    callback(error);
+                });
+            };
+
+            connection.query(
+                `SELECT p.player_id, p.money
+                 FROM Player AS p
+                 JOIN Game AS g ON g.game_id = p.game_id
+                 WHERE p.user_id = ?
+                   AND p.game_id = ?
+                   AND p.is_bankrupt = 0
+                   AND g.game_status = 'in_progress'
+                   AND g.current_player_id = p.player_id
+                 FOR UPDATE`,
+                [Number(userId), Number(gameId)],
+                (playerErr, players) => {
+                    if (playerErr) {
+                        failTransaction(playerErr);
+                        return;
+                    }
+
+                    if (players.length === 0) {
+                        failTransaction(
+                            new Error('It is not your turn in an active game.')
+                        );
+                        return;
+                    }
+
+                    const player = players[0];
+
+                    connection.query(
+                        `SELECT
+                             property_id,
+                             property_name,
+                             board_position,
+                             property_type,
+                             color_group,
+                             house_cost,
+                             hotel_cost
+                         FROM Property
+                         WHERE property_id = ?
+                         FOR UPDATE`,
+                        [Number(propertyId)],
+                        (propertyErr, properties) => {
+                            if (propertyErr) {
+                                failTransaction(propertyErr);
+                                return;
+                            }
+
+                            if (properties.length === 0) {
+                                failTransaction(
+                                    new Error('Property not found.')
+                                );
+                                return;
+                            }
+
+                            const property = properties[0];
+
+                            connection.query(
+                                `SELECT
+                                     group_property.property_id,
+                                     group_property.property_name,
+                                     group_property.board_position,
+                                     group_property.property_type,
+                                     group_property.color_group,
+                                     group_property.house_cost,
+                                     group_property.hotel_cost,
+                                     owned.player_id AS owner_player_id,
+                                     owned.houses,
+                                     owned.hotels,
+                                     owned.mortgaged
+                                 FROM Property AS group_property
+                                 LEFT JOIN Player_Property AS owned
+                                   ON owned.property_id = group_property.property_id
+                                  AND owned.player_id IN (
+                                      SELECT player_id
+                                      FROM Player
+                                      WHERE game_id = ?
+                                  )
+                                 WHERE group_property.color_group = ?
+                                 ORDER BY group_property.board_position
+                                 FOR UPDATE`,
+                                [Number(gameId), property.color_group],
+                                (groupErr, groupProperties) => {
+                                    if (groupErr) {
+                                        failTransaction(groupErr);
+                                        return;
+                                    }
+
+                                    const nonBuildablePositions = [
+                                        5, 12, 15, 25, 28, 35
+                                    ];
+
+                                    if (
+                                        nonBuildablePositions.includes(
+                                            Number(property.board_position)
+                                        )
+                                    ) {
+                                        failTransaction(
+                                            new Error(
+                                                'You can only build on color-group properties.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    const ownsFullSet = groupProperties.every(
+                                        groupProperty =>
+                                            Number(groupProperty.owner_player_id) ===
+                                            Number(player.player_id)
+                                    );
+
+                                    if (!ownsFullSet) {
+                                        failTransaction(
+                                            new Error(
+                                                'You must own the full color set before building.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    const hasMortgagedProperty =
+                                        groupProperties.some(
+                                            groupProperty =>
+                                                Number(groupProperty.mortgaged) === 1
+                                        );
+
+                                    if (hasMortgagedProperty) {
+                                        failTransaction(
+                                            new Error(
+                                                'You cannot build while a property in the set is mortgaged.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    const targetProperty = groupProperties.find(
+                                        groupProperty =>
+                                            Number(groupProperty.property_id) ===
+                                            Number(property.property_id)
+                                    );
+
+                                    if (
+                                        buildingType === 'house' &&
+                                        Number(targetProperty.houses) >= 4
+                                    ) {
+                                        failTransaction(
+                                            new Error(
+                                                'A property can have no more than four houses before a hotel.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    if (
+                                        buildingType === 'hotel' &&
+                                        (
+                                            Number(targetProperty.houses) !== 4 ||
+                                            Number(targetProperty.hotels) > 0
+                                        )
+                                    ) {
+                                        failTransaction(
+                                            new Error(
+                                                'You need four houses on this property before buying a hotel.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    const buildingCost =
+                                        buildingType === 'house'
+                                            ? Number(targetProperty.house_cost)
+                                            : Number(targetProperty.hotel_cost);
+
+                                    if (
+                                        !Number.isSafeInteger(buildingCost) ||
+                                        buildingCost <= 0
+                                    ) {
+                                        failTransaction(
+                                            new Error(
+                                                'The building cost is not set correctly for this property.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    if (Number(player.money) < buildingCost) {
+                                        failTransaction(
+                                            new Error(
+                                                'You do not have enough money to buy this building.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    connection.query(
+                                        `UPDATE Player
+                                         SET money = money - ?
+                                         WHERE player_id = ?
+                                           AND game_id = ?
+                                           AND is_bankrupt = 0
+                                           AND money >= ?`,
+                                        [
+                                            buildingCost,
+                                            player.player_id,
+                                            Number(gameId),
+                                            buildingCost
+                                        ],
+                                        (moneyErr, moneyResult) => {
+                                            if (moneyErr) {
+                                                failTransaction(moneyErr);
+                                                return;
+                                            }
+
+                                            if (moneyResult.affectedRows !== 1) {
+                                                failTransaction(
+                                                    new Error(
+                                                        'You do not have enough money to buy this building.'
+                                                    )
+                                                );
+                                                return;
+                                            }
+
+                                            const buildingUpdate =
+                                                buildingType === 'house'
+                                                    ? {
+                                                        sql: `UPDATE Player_Property
+                                                              SET houses = houses + 1
+                                                              WHERE player_id = ?
+                                                                AND property_id = ?
+                                                                AND houses < 4
+                                                                AND hotels = 0`,
+                                                        values: [
+                                                            player.player_id,
+                                                            property.property_id
+                                                        ]
+                                                    }
+                                                    : {
+                                                        sql: `UPDATE Player_Property
+                                                              SET houses = 0,
+                                                                  hotels = 1
+                                                              WHERE player_id = ?
+                                                                AND property_id = ?
+                                                                AND houses = 4
+                                                                AND hotels = 0`,
+                                                        values: [
+                                                            player.player_id,
+                                                            property.property_id
+                                                        ]
+                                                    };
+
+                                            connection.query(
+                                                buildingUpdate.sql,
+                                                buildingUpdate.values,
+                                                (buildingErr, buildingResult) => {
+                                                    if (buildingErr) {
+                                                        failTransaction(buildingErr);
+                                                        return;
+                                                    }
+
+                                                    if (
+                                                        buildingResult.affectedRows !== 1
+                                                    ) {
+                                                        failTransaction(
+                                                            new Error(
+                                                                'The building count changed. Refresh the game and try again.'
+                                                            )
+                                                        );
+                                                        return;
+                                                    }
+
+                                                    const transactionType =
+                                                        buildingType === 'house'
+                                                            ? 'House Purchase'
+                                                            : 'Hotel Purchase';
+
+                                                    connection.query(
+                                                        `INSERT INTO Game_Transaction
+                                                         (
+                                                             game_id,
+                                                             amount,
+                                                             transaction_type,
+                                                             player_id
+                                                         )
+                                                         VALUES (?, ?, ?, ?)`,
+                                                        [
+                                                            Number(gameId),
+                                                            -buildingCost,
+                                                            transactionType,
+                                                            player.player_id
+                                                        ],
+                                                        transactionErr => {
+                                                            if (transactionErr) {
+                                                                failTransaction(
+                                                                    transactionErr
+                                                                );
+                                                                return;
+                                                            }
+
+                                                            connection.commit(
+                                                                commitErr => {
+                                                                    if (commitErr) {
+                                                                        failTransaction(
+                                                                            commitErr
+                                                                        );
+                                                                        return;
+                                                                    }
+
+                                                                    finished = true;
+                                                                    connection.release();
+                                                                    callback(null, {
+                                                                        propertyId:
+                                                                            property.property_id,
+                                                                        propertyName:
+                                                                            property.property_name,
+                                                                        buildingType,
+                                                                        cost: buildingCost
+                                                                    });
+                                                                }
+                                                            );
+                                                        }
+                                                    );
+                                                }
+                                            );
+                                        }
+                                    );
+                                    }
+                            );
+                        }
+                    );
+                }
+            );
+        });
+    });
+}
 
 function payRent(db, userId, gameId, callback, rentOptions = {}) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
@@ -295,7 +686,8 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                     const player = players[0];
 
                     connection.query(
-                        `SELECT property_id, property_name, board_position, property_type, rent
+                        `SELECT property_id, property_name, board_position,
+                                property_type, color_group, rent
                          FROM Property
                          WHERE board_position = ?`,
                         [player.position],
@@ -318,6 +710,8 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                             connection.query(
                                 `SELECT
                                     pp.player_id,
+                                    pp.houses,
+                                    pp.hotels,
                                     p.user_id,
                                     p.player_name,
                                     u.username,
@@ -348,7 +742,20 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                                   'water works'
                                               )
                                           )
-                                    ) AS utility_count
+                                    ) AS utility_count,
+                                    (
+                                        SELECT COUNT(*)
+                                        FROM Player_Property AS set_ownership
+                                        JOIN Property AS set_property
+                                            ON set_property.property_id = set_ownership.property_id
+                                        WHERE set_ownership.player_id = pp.player_id
+                                          AND set_property.color_group = ?
+                                    ) AS owned_color_group_count,
+                                    (
+                                        SELECT COUNT(*)
+                                        FROM Property AS set_property
+                                        WHERE set_property.color_group = ?
+                                    ) AS color_group_property_count
                                  FROM Player_Property pp
                                  JOIN Player p
                                    ON p.player_id = pp.player_id
@@ -357,7 +764,12 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                  WHERE pp.property_id = ?
                                    AND p.game_id = ?
                                  FOR UPDATE`,
-                                [property.property_id, gameId],
+                                [
+                                    property.color_group,
+                                    property.color_group,
+                                    property.property_id,
+                                    gameId
+                                ],
                                 (ownerErr, owners) => {
                                     if (ownerErr) {
                                         failTransaction(ownerErr);
@@ -432,6 +844,27 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                         rent =
                                             Number(rentOptions.diceTotal) *
                                             utilityMultiplier;
+                                    } else {
+                                        const rentSchedule =
+                                            PROPERTY_RENT_SCHEDULES[propertyName];
+
+                                        if (rentSchedule) {
+                                            const houses = Number(owner.houses || 0);
+                                            const hotels = Number(owner.hotels || 0);
+                                            const ownsFullColorGroup =
+                                                Number(owner.color_group_property_count) > 0 &&
+                                                Number(owner.owned_color_group_count) ===
+                                                    Number(owner.color_group_property_count);
+                                            const rentIndex = hotels > 0
+                                                ? 6
+                                                : houses > 0
+                                                    ? Math.min(5, houses + 1)
+                                                    : ownsFullColorGroup
+                                                        ? 1
+                                                        : 0;
+
+                                            rent = rentSchedule[rentIndex];
+                                        }
                                     }
 
                                     if (!Number.isFinite(rent) || rent < 0) {
@@ -564,5 +997,6 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
 
 module.exports = {
     purchaseProperty,
+    purchaseBuilding,
     payRent
 };

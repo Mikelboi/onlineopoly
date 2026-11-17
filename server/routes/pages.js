@@ -8,6 +8,7 @@ const roomPath = path.join(__dirname, '..', '..', 'client', 'Game', 'room.html')
 const boardPath = path.join(__dirname, '..', '..', 'client', 'Game', 'board.html');
 const tokenSelectionPath = path.join(__dirname, '..', '..', 'client', 'Game', 'token-selection.html');
 const menuPath = path.join( __dirname, '..', '..', 'client', 'Game', 'menu.html');
+const rulesPath = path.join(__dirname, '..', '..', 'client', 'Game', 'rules.html');
 
 function servePage(filePath, res) {
     fs.readFile(filePath, (err, data) => {
@@ -37,7 +38,7 @@ function handlePageRequest(req, res) {
 
     // Serve sprite images.
     if (route.startsWith('/Game/sprites/')) {
-        const filename = path.basename(route);
+        const filename = path.basename(decodeURIComponent(route));
         const spritePath = path.join(
             __dirname,
             '..',
@@ -87,6 +88,8 @@ function handlePageRequest(req, res) {
         filePath = registerPath;
     } else if (route === '/menu') {
         filePath = menuPath;
+    } else if (route === '/rules') {
+        filePath = rulesPath;
     } else if (route === '/lobby') {
         filePath = lobbyPath;
     } else if (route === '/room' || route.startsWith('/room/')) {

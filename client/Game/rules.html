@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onlineopoly — Game Rules</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #c2eccd;
+            color: #222;
+            font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+        }
+
+        main {
+            width: 100%;
+            margin: 0 auto;
+            padding: 10px 0 0;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            color: #f48859;
+            text-align: center;
+        }
+
+        .donkey-kong-note {
+            position: fixed;
+            top: 10px;
+            left: 12px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: clamp(82px, 12vw, 145px);
+            text-align: center;
+        }
+
+        .donkey-kong-sprite {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            transform: rotate(-10deg);
+        }
+
+        .donkey-kong-caption {
+            margin: 2px 0 0;
+            font-size: clamp(10px, 1.1vw, 14px);
+            font-weight: bold;
+            line-height: 1.15;
+        }
+
+        .money-disclaimer {
+            position: fixed;
+            top: 12px;
+            right: 14px;
+            z-index: 5;
+            max-width: 190px;
+            margin: 0;
+            font-size: clamp(20px, 1.2vw, 14px);
+            font-weight: bold;
+            line-height: 1.2;
+            text-align: right;
+        }
+
+        .hasbro-note {
+            position: fixed;
+            top: 86px;
+            right: 14px;
+            z-index: 5;
+            margin: 0;
+            font-size: clamp(20px, 1.2vw, 14px);
+            font-style: italic;
+            text-align: right;
+        }
+
+        .rules-viewer {
+            display: grid;
+            grid-template-columns: 48px minmax(0, 1fr) 48px;
+            align-items: center;
+            gap: 0;
+            width: calc(100% - clamp(40px, 8vw, 120px));
+            margin: 0 auto;
+        }
+
+        .rule-image {
+            display: block;
+            width: 100%;
+            max-height: calc(100vh - 90px);
+            height: auto;
+            justify-self: center;
+            object-fit: contain;
+        }
+
+        .rule-arrow {
+            width: 52px;
+            height: 64px;
+            border: 2px solid #17251c;
+            border-radius: 12px;
+            background: #f48859;
+            color: white;
+            font-size: 36px;
+            font-weight: bold;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        #previous-rule {
+            transform: translateX(6px);
+        }
+
+        #next-rule {
+            transform: translateX(-6px);
+        }
+
+        .rule-arrow:hover:not(:disabled) {
+            background: #d96e43;
+        }
+
+        .rule-arrow:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        .page-indicator {
+            margin: 16px 0 0;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        @media (max-width: 600px) {
+            .rules-viewer {
+                grid-template-columns: 34px minmax(0, 1fr) 34px;
+                gap: 0;
+            }
+
+            .rule-arrow {
+                width: 34px;
+                height: 50px;
+                font-size: 28px;
+            }
+
+            .rule-image {
+                max-height: calc(100vh - 82px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <aside class="donkey-kong-note">
+        <img
+            class="donkey-kong-sprite"
+            src="/Game/sprites/Donkey-Kong-PNG-Images.png"
+            alt="Donkey Kong"
+        >
+        <p class="donkey-kong-caption">Oh look it's Donkey Kong!</p>
+    </aside>
+    <p class="money-disclaimer">Side note: All money amounts are in American dollars.</p>
+    <p class="hasbro-note">Hasbro please don't sue</p>
+
+    <main>
+        <h1>How to Play</h1>
+        <div class="rules-viewer" aria-label="Onlineopoly rules">
+            <button id="previous-rule" class="rule-arrow" type="button" aria-label="Previous rule">‹</button>
+            <img id="rule-image" class="rule-image" src="/Game/sprites/Rules%201.png" alt="Onlineopoly Rule 1">
+            <button id="next-rule" class="rule-arrow" type="button" aria-label="Next rule">›</button>
+        </div>
+        <p id="page-indicator" class="page-indicator" aria-live="polite">Page 1 of 7</p>
+    </main>
+
+    <script>
+        const totalRules = 7;
+        let currentRule = 1;
+
+        const ruleImage = document.getElementById('rule-image');
+        const pageIndicator = document.getElementById('page-indicator');
+        const previousButton = document.getElementById('previous-rule');
+        const nextButton = document.getElementById('next-rule');
+
+        function showRule(ruleNumber) {
+            currentRule = ruleNumber;
+            ruleImage.src = `/Game/sprites/Rules%20${currentRule}.png`;
+            ruleImage.alt = `Onlineopoly Rule ${currentRule}`;
+            pageIndicator.textContent = `Page ${currentRule} of ${totalRules}`;
+            previousButton.disabled = currentRule === 1;
+            nextButton.disabled = currentRule === totalRules;
+        }
+
+        previousButton.addEventListener('click', () => {
+            if (currentRule > 1) showRule(currentRule - 1);
+        });
+
+        nextButton.addEventListener('click', () => {
+            if (currentRule < totalRules) showRule(currentRule + 1);
+        });
+
+        showRule(currentRule);
+    </script>
+</body>
+</html>

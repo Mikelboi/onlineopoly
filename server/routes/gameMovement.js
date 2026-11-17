@@ -12,6 +12,43 @@ const {
     applyPlayerTransferCard
 } = require('../Gameplay/chanceTransfers');
 
+// Test roll sequence for the first player in each game. These legal rolls
+// land on the two properties in the first color set: positions 3, then 1.
+const playerOneTestRolls = [
+    { die1: 1, die2: 2 }, // Position 3
+    { die1: 3, die2: 5 }, // Position 11
+    { die1: 4, die2: 6 }, // Position 21
+    { die1: 4, die2: 6 }, // Position 31
+    { die1: 4, die2: 6 }  // Position 1, passing GO
+];
+const playerOneTestRollCounts = new Map();
+const playerTwoRentTestLandings = new Set();
+const playerTwoTestPropertyNames = {
+    1: 'Dragon Drive',
+    3: 'Circus Circle'
+};
+
+function rollForPlayer(gameId, player) {
+    if (Number(player.player_id) !== Number(player.first_player_id)) {
+        return rollDice();
+    }
+
+    const rollKey = `${gameId}:${player.player_id}`;
+    const rollIndex = playerOneTestRollCounts.get(rollKey) || 0;
+
+    if (rollIndex >= playerOneTestRolls.length) {
+        return rollDice();
+    }
+
+    playerOneTestRollCounts.set(rollKey, rollIndex + 1);
+    return {
+        ...playerOneTestRolls[rollIndex],
+        total:
+            playerOneTestRolls[rollIndex].die1 +
+            playerOneTestRolls[rollIndex].die2
+    };
+}
+
 function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJsonBody, io }) {
     const route = req.url.split('?')[0];
 
@@ -167,11 +204,40 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                     }
 
                     db.query(
-                        `SELECT player_id, player_name, position,is_in_jail, jail_free_cards,jail_turns,
-                                consecutive_doubles
+                        `SELECT player_id, player_name, position, is_in_jail,
+                                jail_free_cards, jail_turns, consecutive_doubles,
+                                (SELECT MIN(player_id)
+                                 FROM Player
+                                 WHERE game_id = ?) AS first_player_id,
+                                (SELECT player_id
+                                  FROM Player
+                                  WHERE game_id = ?
+                                  ORDER BY player_id ASC
+                                  LIMIT 1 OFFSET 1) AS second_player_id,
+                                (
+                                    SELECT test_property.board_position
+                                    FROM Player_Property AS test_ownership
+                                    JOIN Property AS test_property
+                                      ON test_property.property_id =
+                                         test_ownership.property_id
+                                    WHERE test_ownership.player_id = (
+                                        SELECT MIN(player_id)
+                                        FROM Player
+                                        WHERE game_id = ?
+                                    )
+                                      AND test_property.board_position IN (1, 3)
+                                      AND (
+                                          test_ownership.houses > 0
+                                          OR test_ownership.hotels > 0
+                                      )
+                                    ORDER BY test_ownership.hotels DESC,
+                                             test_ownership.houses DESC,
+                                             test_property.board_position ASC
+                                    LIMIT 1
+                                ) AS test_target_position
                          FROM Player
                          WHERE game_id = ? AND user_id = ?`,
-                        [gameId, session.userId],
+                        [gameId, gameId, gameId, gameId, session.userId],
                         (playerErr, players) => {
                             if (playerErr) {
                                 console.error(
@@ -213,12 +279,31 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                             let jailBailRequired = false;
 
                             const wasInJail = Number(player.is_in_jail) === 1;
+                            const playerTwoTestKey =
+                                `${gameId}:${player.player_id}`;
+                            const testTargetPosition =
+                                player.test_target_position === null ||
+                                player.test_target_position === undefined
+                                    ? null
+                                    : Number(player.test_target_position);
+                            const forceRentTestLanding =
+                                !wasInJail &&
+                                Number(player.player_id) ===
+                                    Number(player.second_player_id) &&
+                                testTargetPosition !== null &&
+                                !playerTwoRentTestLandings.has(playerTwoTestKey);
+                            const testPropertyName = forceRentTestLanding
+                                ? playerTwoTestPropertyNames[testTargetPosition]
+                                : null;
+                            let testRentLanding = false;
                             let rolledDoubles = false;
                             let consecutiveDoubles = 0;
                             let thirdConsecutiveDouble = false;
 
                             try {
-                                dice = rollDice();
+                                dice = forceRentTestLanding
+                                    ? { die1: 1, die2: 2, total: 3 }
+                                    : rollForPlayer(gameId, player);
                                 const isDoubles = dice.die1 === dice.die2;
 
                                 if (!wasInJail && isDoubles) {
@@ -289,6 +374,10 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                     Number(player.position),
                                     dice.total
                                 );
+                                if (forceRentTestLanding) {
+                                    newPosition = testTargetPosition;
+                                    testRentLanding = true;
+                                }
                                 const landedOnGoToJail = newPosition === 30;
                                 const chanceCardPositions = [7, 22, 36];
                                 const communityChestPositions = [2, 17, 33];
@@ -314,7 +403,7 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                         deckName: cardDeckName
                                     };
                                 }
-                                passedGo =
+                                passedGo = !testRentLanding &&
                                     Number(player.position) + dice.total >= 40;
 
                                 if (
@@ -427,6 +516,12 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                         return;
                                     }
 
+                                    if (testRentLanding) {
+                                        playerTwoRentTestLandings.add(
+                                            playerTwoTestKey
+                                        );
+                                    }
+
                                     const oldPosition = Number(player.position);
 
                                     console.log('GO reward check:', {
@@ -458,7 +553,9 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                                 oldPosition,
                                                                 newPosition,
                                                                 dice,
-                                                                diceTotal: dice.total
+                                                                diceTotal: dice.total,
+                                                                testRentLanding,
+                                                                testPropertyName
                                                             }
                                                         );
                                                     }
@@ -484,7 +581,9 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                             oldPosition,
                                                             newPosition,
                                                             dice,
-                                                            diceTotal: dice.total
+                                                            diceTotal: dice.total,
+                                                            testRentLanding,
+                                                            testPropertyName
                                                         }
                                                     );
                                                 }
@@ -527,6 +626,8 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                     oldPosition,
                                                     newPosition,
                                                     passedGo,
+                                                    testRentLanding,
+                                                    testPropertyName,
                                                     sentToJail: sendToJail,
                                                     chanceCard,
                                                     cardDeckName,

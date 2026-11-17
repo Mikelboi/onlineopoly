@@ -960,6 +960,48 @@
             font-size: 11px;
         }
 
+        .player-building-controls {
+            display: grid;
+            gap: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #c8d5c5;
+        }
+
+        .player-building-toggle,
+        .player-building-action {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #356b43;
+            border-radius: 5px;
+            background: #e8f3e8;
+            color: #234d2d;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .player-building-selection {
+            display: grid;
+            gap: 5px;
+        }
+
+        .player-building-selection[hidden] {
+            display: none;
+        }
+
+        .player-building-selection select {
+            width: 100%;
+            padding: 5px;
+            font-size: 11px;
+        }
+
+        .player-building-message {
+            margin: 0;
+            color: #435443;
+            font-size: 10px;
+        }
+
         .property-card-dialog {
             position: relative;
             width: min(90vw, 380px);
@@ -1174,6 +1216,55 @@
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid #888;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .property-building-markers {
+            position: absolute;
+            z-index: 6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1px;
+            pointer-events: none;
+        }
+
+        .bottom-space .property-building-markers,
+        .top-space .property-building-markers {
+            top: 1px;
+            left: 50%;
+            flex-direction: row;
+            transform: translateX(-50%);
+        }
+
+        .left-space .property-building-markers {
+            top: 50%;
+            right: 1px;
+            flex-direction: column;
+            transform: translateY(-50%);
+        }
+
+        .right-space .property-building-markers {
+            top: 50%;
+            left: 1px;
+            flex-direction: column;
+            transform: translateY(-50%);
+        }
+
+        .left-space .property-building-icon.house,
+        .right-space .property-building-icon.house {
+            transform: rotate(-90deg);
+        }
+
+        .property-building-icon {
+            display: block;
+            width: clamp(7px, 0.9vw, 11px);
+            height: clamp(7px, 0.9vw, 11px);
+            flex: 0 0 auto;
+        }
+
+        .property-building-icon.hotel {
+            width: clamp(10px, 1.25vw, 15px);
+            height: clamp(10px, 1.25vw, 15px);
         }
 
         .board-space[data-position="10"] .player-tokens {
@@ -1652,9 +1743,25 @@
             return;
         }
 
+        diceResult.textContent = move.testRentLanding
+            ? `${move.playerName} was moved to ${move.testPropertyName} ` +
+                'for the building rent test.'
+            : `${move.playerName} rolled a ${move.dice.die1} and a ` +
+                `${move.dice.die2}.`;
+
+        await loadPlayerTokens();
+    });
+
+    socket.on('buildingPurchased', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        const buildingName =
+            data.buildingType === 'house' ? 'a house' : 'a hotel';
+
         diceResult.textContent =
-            `${move.playerName} rolled a ${move.dice.die1} and a ` +
-            `${move.dice.die2}.`;
+            `${data.propertyName} now has ${buildingName}.`;
 
         await loadPlayerTokens();
     });
@@ -2058,8 +2165,9 @@ socket.on('auctionFinished', async (data) => {
         await showChanceCardPopup(data.chanceCard, data.cardDeckName);
 
 
-        const rollMessage =
-            `You rolled a ${data.dice.die1} and a ${data.dice.die2}.`;
+        const rollMessage = data.testRentLanding
+            ? `Test landing: Player 2 was moved to ${data.testPropertyName}.`
+            : `You rolled a ${data.dice.die1} and a ${data.dice.die2}.`;
         const outcomeMessage = data.jailBailPaid
             ? 'You paid $50 bail and left Jail.'
             : data.jailAttempt
@@ -2629,6 +2737,95 @@ placeBidButton.addEventListener('click', async () => {
             });
         }
 
+        function createBuildingIcon(type) {
+            const svgNamespace = 'http://www.w3.org/2000/svg';
+            const icon = document.createElementNS(svgNamespace, 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('aria-hidden', 'true');
+            icon.classList.add('property-building-icon');
+            icon.classList.add(type);
+
+            const building = document.createElementNS(svgNamespace, 'path');
+            if (type === 'hotel') {
+                building.setAttribute('d', 'M4 21V8l8-6 8 6v13H4Z');
+                building.setAttribute('fill', '#d92727');
+                building.setAttribute('stroke', '#7c1111');
+                building.setAttribute('stroke-width', '1.5');
+                building.setAttribute('stroke-linejoin', 'round');
+                icon.append(building);
+
+                [[7, 10], [14, 10], [7, 15], [14, 15]].forEach(
+                    ([x, y]) => {
+                        const window = document.createElementNS(
+                            svgNamespace,
+                            'rect'
+                        );
+                        window.setAttribute('x', String(x));
+                        window.setAttribute('y', String(y));
+                        window.setAttribute('width', '3');
+                        window.setAttribute('height', '3');
+                        window.setAttribute('fill', '#fff5d6');
+                        icon.append(window);
+                    }
+                );
+            } else {
+                building.setAttribute('d', 'M2 11 12 3l10 8v10h-7v-6H9v6H2V11Z');
+                building.setAttribute('fill', '#32a852');
+                building.setAttribute('stroke', '#17682d');
+                building.setAttribute('stroke-width', '1.5');
+                building.setAttribute('stroke-linejoin', 'round');
+                icon.append(building);
+            }
+
+            return icon;
+        }
+
+        function placePropertyBuildings(properties) {
+            document.querySelectorAll('.property-building-markers').forEach(
+                markers => markers.remove()
+            );
+
+            properties.forEach(property => {
+                const houses = Math.max(
+                    0,
+                    Number(property.houses || 0)
+                );
+                const hotels = Math.max(
+                    0,
+                    Number(property.hotels || 0)
+                );
+                if (houses === 0 && hotels === 0) return;
+
+                const space = document.querySelector(
+                    `.board-space[data-position="${property.board_position}"]`
+                );
+                if (!space) return;
+
+                const markers = document.createElement('div');
+                markers.className = 'property-building-markers';
+                markers.setAttribute('role', 'img');
+                markers.setAttribute(
+                    'aria-label',
+                    hotels > 0
+                        ? `${property.property_name}: hotel`
+                        : `${property.property_name}: ${houses} ` +
+                            `${houses === 1 ? 'house' : 'houses'}`
+                );
+                markers.title = hotels > 0
+                    ? `${property.property_name}: Hotel`
+                    : `${property.property_name}: ${houses} ` +
+                        `${houses === 1 ? 'house' : 'houses'}`;
+
+                const markerCount = hotels > 0 ? 1 : houses;
+                const markerType = hotels > 0 ? 'hotel' : 'house';
+                for (let index = 0; index < markerCount; index += 1) {
+                    markers.append(createBuildingIcon(markerType));
+                }
+
+                space.append(markers);
+            });
+        }
+
 
         function isRailroadProperty(property) {
             const propertyType = String(property.property_type || '')
@@ -2813,7 +3010,104 @@ placeBidButton.addEventListener('click', async () => {
             }
         }
 
-        function displayPlayerCards(players, ownedPropertyRows = []) {
+        function getCompleteOwnedColorGroups(playerId, properties) {
+            const nonColorGroupPositions = new Set([5, 12, 15, 25, 28, 35]);
+            const groups = new Map();
+
+            properties.forEach(property => {
+                const colorGroup = String(property.color_group || '').trim();
+                const position = Number(property.board_position);
+
+                if (!colorGroup || nonColorGroupPositions.has(position)) {
+                    return;
+                }
+
+                if (!groups.has(colorGroup)) {
+                    groups.set(colorGroup, []);
+                }
+
+                groups.get(colorGroup).push(property);
+            });
+
+            return [...groups.entries()]
+                .filter(([, groupProperties]) =>
+                    groupProperties.length > 1 &&
+                    groupProperties.every(
+                        property =>
+                            Number(property.player_id) === Number(playerId)
+                    )
+                )
+                .map(([colorGroup, groupProperties]) => ({
+                    colorGroup,
+                    properties: groupProperties
+                }));
+        }
+
+        function getAvailableBuildTargets(colorGroups) {
+            return colorGroups.flatMap(group => {
+                if (group.properties.some(property => Number(property.mortgaged) === 1)) {
+                    return [];
+                }
+
+                return group.properties
+                    .filter(property => {
+                        const houses = Number(property.houses || 0);
+                        const hotels = Number(property.hotels || 0);
+                        const canAddHouse = houses < 4 && hotels === 0;
+                        const canAddHotel = houses === 4 && hotels === 0;
+
+                        return canAddHouse || canAddHotel;
+                    })
+                    .map(property => ({
+                        property,
+                        colorGroup: group.colorGroup
+                    }));
+            });
+        }
+
+        async function submitBuildingPurchase(property, buildingType, message, buttons) {
+            buttons.forEach(button => {
+                button.disabled = true;
+            });
+            message.textContent = 'Processing purchase...';
+
+            try {
+                const response = await fetch('/games/buy-building', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        gameId,
+                        propertyId: property.property_id,
+                        buildingType
+                    })
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message || 'Could not purchase the building.'
+                    );
+                }
+
+                diceResult.textContent = data.message;
+                await loadPlayerTokens();
+            } catch (error) {
+                message.textContent = error.message;
+            } finally {
+                buttons.forEach(button => {
+                    button.disabled = false;
+                });
+            }
+        }
+
+        function displayPlayerCards(
+            players,
+            ownedPropertyRows = [],
+            currentUserPlayerId = null,
+            currentPlayerId = null
+        ) {
             const playerCards = [
                 document.getElementById('player-card-1'),
                 document.getElementById('player-card-2'),
@@ -3014,6 +3308,151 @@ placeBidButton.addEventListener('click', async () => {
                     propertiesTab
                 );
 
+                const completeColorGroups = getCompleteOwnedColorGroups(
+                    player.player_id,
+                    ownedPropertyRows
+                );
+                const isCurrentUserTurn =
+                    Number(player.player_id) === Number(currentUserPlayerId) &&
+                    Number(player.player_id) === Number(currentPlayerId);
+
+                if (isCurrentUserTurn && completeColorGroups.length > 0) {
+                    const buildingControls = document.createElement('section');
+                    buildingControls.className = 'player-building-controls';
+
+                    const buildingToggle = document.createElement('button');
+                    buildingToggle.type = 'button';
+                    buildingToggle.className = 'player-building-toggle';
+                    buildingToggle.textContent = 'Build On A Property';
+
+                    const buildingSelection = document.createElement('div');
+                    buildingSelection.className = 'player-building-selection';
+                    buildingSelection.hidden = true;
+
+                    const propertySelect = document.createElement('select');
+                    propertySelect.setAttribute(
+                        'aria-label',
+                        'Choose a property to build on'
+                    );
+
+                    const buildTargets = getAvailableBuildTargets(
+                        completeColorGroups
+                    );
+                    const targetGroups = new Map();
+
+                    buildTargets.forEach(target => {
+                        if (!targetGroups.has(target.colorGroup)) {
+                            targetGroups.set(target.colorGroup, []);
+                        }
+                        targetGroups.get(target.colorGroup).push(target);
+                    });
+
+                    targetGroups.forEach((targets, colorGroup) => {
+                        const optionGroup = document.createElement('optgroup');
+                        const capitalizedColorGroup = colorGroup
+                            .split(/\s+/)
+                            .map(
+                                word =>
+                                    word.charAt(0).toUpperCase() +
+                                    word.slice(1).toLowerCase()
+                            )
+                            .join(' ');
+                        optionGroup.label = `${capitalizedColorGroup} Set`;
+
+                        targets.forEach(({ property }) => {
+                            const option = document.createElement('option');
+                            option.value = String(property.property_id);
+                            option.textContent =
+                                `${property.property_name} ` +
+                                `(${Number(property.houses || 0)} houses, ` +
+                                `${Number(property.hotels || 0)} hotels)`;
+                            optionGroup.append(option);
+                        });
+
+                        propertySelect.append(optionGroup);
+                    });
+
+                    const houseButton = document.createElement('button');
+                    houseButton.type = 'button';
+                    houseButton.className = 'player-building-action';
+                    houseButton.textContent = 'Buy House';
+
+                    const hotelButton = document.createElement('button');
+                    hotelButton.type = 'button';
+                    hotelButton.className = 'player-building-action';
+                    hotelButton.textContent = 'Buy Hotel';
+
+                    const buildingMessage = document.createElement('p');
+                    buildingMessage.className = 'player-building-message';
+                    buildingMessage.setAttribute('aria-live', 'polite');
+
+                    const selectedTarget = () => buildTargets.find(
+                        target =>
+                            String(target.property.property_id) ===
+                            propertySelect.value
+                    );
+                    const updateBuildingButtons = () => {
+                        const target = selectedTarget();
+                        const property = target?.property;
+                        const houses = Number(property?.houses || 0);
+                        const hotels = Number(property?.hotels || 0);
+
+                        houseButton.hidden =
+                            !property || houses >= 4 || hotels > 0;
+                        hotelButton.hidden =
+                            !property || houses !== 4 || hotels > 0;
+                    };
+
+                    if (buildTargets.length === 0) {
+                        propertySelect.disabled = true;
+                        houseButton.hidden = true;
+                        hotelButton.hidden = true;
+                        buildingMessage.textContent =
+                            'No property in this set can be improved right now.';
+                    } else {
+                        propertySelect.addEventListener(
+                            'change',
+                            updateBuildingButtons
+                        );
+                        houseButton.addEventListener('click', () => {
+                            const target = selectedTarget();
+                            if (target) {
+                                submitBuildingPurchase(
+                                    target.property,
+                                    'house',
+                                    buildingMessage,
+                                    [houseButton, hotelButton]
+                                );
+                            }
+                        });
+                        hotelButton.addEventListener('click', () => {
+                            const target = selectedTarget();
+                            if (target) {
+                                submitBuildingPurchase(
+                                    target.property,
+                                    'hotel',
+                                    buildingMessage,
+                                    [houseButton, hotelButton]
+                                );
+                            }
+                        });
+                        updateBuildingButtons();
+                    }
+
+                    buildingToggle.addEventListener('click', () => {
+                        buildingSelection.hidden = !buildingSelection.hidden;
+                    });
+
+                    buildingSelection.append(
+                        propertySelect,
+                        houseButton,
+                        hotelButton,
+                        buildingMessage
+                    );
+                    buildingControls.append(buildingToggle, buildingSelection);
+                    card.append(buildingControls);
+                }
+
                 card.hidden = false;
             });
         }
@@ -3041,7 +3480,7 @@ placeBidButton.addEventListener('click', async () => {
                 const data = await response.json();
 
                 placePlayerTokens(data.players);
-                displayPlayerCards(data.players, data.properties || []);
+                placePropertyBuildings(data.properties || []);
                 const currentPlayerId = Number(data.game.current_player_id);
                 const currentPlayer = data.players.find(
                     player => Number(player.player_id) === currentPlayerId
@@ -3055,6 +3494,16 @@ placeBidButton.addEventListener('click', async () => {
 
                 const myPlayer = data.players.find(
                     player => Number(player.user_id) === Number(data.currentUserId)
+                );
+                const currentUserPlayerId = myPlayer
+                    ? Number(myPlayer.player_id)
+                    : null;
+
+                displayPlayerCards(
+                    data.players,
+                    data.properties || [],
+                    currentUserPlayerId,
+                    currentPlayerId
                 );
 
                 const useJailCardButton =
