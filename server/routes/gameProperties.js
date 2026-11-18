@@ -1,6 +1,8 @@
 const {
     purchaseProperty,
-    purchaseBuilding
+    purchaseBuilding,
+    mortgageProperty,
+    unmortgageProperty
 } = require('../Gameplay/properties');
 
 function handleGamePropertyRequest(req, res, { db, getSession, sendJson, readJsonBody, io }) {
@@ -182,6 +184,174 @@ if (req.method === 'POST' && route === '/games/buy-property') {
                             `You purchased a ${buildingType} on ` +
                             `${building.propertyName} for $${building.cost}.`,
                         building
+                    });
+                }
+            );
+        });
+
+        return true;
+    }
+
+    if (req.method === 'POST' && route === '/games/mortgage-property') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to mortgage a property.'
+            });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+            const propertyId = Number(requestData.propertyId);
+
+            if (
+                !Number.isSafeInteger(gameId) ||
+                gameId <= 0 ||
+                !Number.isSafeInteger(propertyId) ||
+                propertyId <= 0
+            ) {
+                sendJson(res, 400, {
+                    message: 'Invalid mortgage request.'
+                });
+                return;
+            }
+
+            mortgageProperty(
+                db,
+                session.userId,
+                gameId,
+                propertyId,
+                (mortgageErr, mortgage) => {
+                    if (mortgageErr) {
+                        const expectedMessages = new Set([
+                            'It is not your turn in an active game.',
+                            'You are not an active player in this game.',
+                            'Property not found.',
+                            'You do not own this property.',
+                            'This property is already mortgaged.',
+                            'Sell all houses and hotels in this color set before mortgaging.',
+                            'The mortgage value is not set correctly.',
+                            'The property mortgage status changed. Refresh and try again.',
+                            'Could not add the mortgage money to your balance.'
+                        ]);
+
+                        if (!expectedMessages.has(mortgageErr.message)) {
+                            console.error('Mortgage property error:', mortgageErr);
+                            sendJson(res, 500, {
+                                message: 'Could not mortgage the property.'
+                            });
+                            return;
+                        }
+
+                        const status =
+                            mortgageErr.message ===
+                                'You are not an active player in this game.'
+                                ? 403
+                                : 409;
+
+                        sendJson(res, status, {
+                            message: mortgageErr.message
+                        });
+                        return;
+                    }
+
+                    if (io) {
+                        io.to(`game:${gameId}`).emit('propertyMortgaged', {
+                            gameId,
+                            ...mortgage
+                        });
+                    }
+
+                    sendJson(res, 200, {
+                        message:
+                            `You mortgaged ${mortgage.propertyName} ` +
+                            `for $${mortgage.mortgageValue}.`,
+                        mortgage
+                    });
+                }
+            );
+        });
+
+        return true;
+    }
+
+    if (req.method === 'POST' && route === '/games/unmortgage-property') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to unmortgage a property.'
+            });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+            const propertyId = Number(requestData.propertyId);
+
+            if (
+                !Number.isSafeInteger(gameId) ||
+                gameId <= 0 ||
+                !Number.isSafeInteger(propertyId) ||
+                propertyId <= 0
+            ) {
+                sendJson(res, 400, {
+                    message: 'Invalid unmortgage request.'
+                });
+                return;
+            }
+
+            unmortgageProperty(
+                db,
+                session.userId,
+                gameId,
+                propertyId,
+                (unmortgageErr, result) => {
+                    if (unmortgageErr) {
+                        const expectedMessages = new Set([
+                            'It is not your turn in an active game.',
+                            'You are not an active player in this game.',
+                            'You do not own this property.',
+                            'This property is not mortgaged.',
+                            'The mortgage value is not set correctly.',
+                            'You do not have enough money to lift this mortgage.',
+                            'The property mortgage status changed. Refresh and try again.'
+                        ]);
+
+                        if (!expectedMessages.has(unmortgageErr.message)) {
+                            console.error('Unmortgage property error:', unmortgageErr);
+                            sendJson(res, 500, {
+                                message: 'Could not unmortgage the property.'
+                            });
+                            return;
+                        }
+
+                        const status =
+                            unmortgageErr.message ===
+                                'You are not an active player in this game.'
+                                ? 403
+                                : 409;
+
+                        sendJson(res, status, {
+                            message: unmortgageErr.message
+                        });
+                        return;
+                    }
+
+                    if (io) {
+                        io.to(`game:${gameId}`).emit('propertyUnmortgaged', {
+                            gameId,
+                            ...result
+                        });
+                    }
+
+                    sendJson(res, 200, {
+                        message:
+                            `You unmortgaged ${result.propertyName} ` +
+                            `for $${result.repaymentAmount}.`,
+                        unmortgage: result
                     });
                 }
             );

@@ -603,6 +603,513 @@ function purchaseBuilding(db, userId, gameId, propertyId, buildingType, callback
     });
 }
 
+function mortgageProperty(db, userId, gameId, propertyId, callback) {
+    if (!Number.isSafeInteger(userId) || userId <= 0) {
+        callback(new Error('Invalid user ID.'));
+        return;
+    }
+
+    if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+        callback(new Error('Invalid game ID.'));
+        return;
+    }
+
+    if (!Number.isSafeInteger(propertyId) || propertyId <= 0) {
+        callback(new Error('Invalid property ID.'));
+        return;
+    }
+
+    db.getConnection((connectionErr, connection) => {
+        if (connectionErr) {
+            callback(connectionErr);
+            return;
+        }
+
+        connection.beginTransaction(beginErr => {
+            if (beginErr) {
+                connection.release();
+                callback(beginErr);
+                return;
+            }
+
+            let finished = false;
+
+            const failTransaction = error => {
+                if (finished) return;
+                finished = true;
+
+                connection.rollback(() => {
+                    connection.release();
+                    callback(error);
+                });
+            };
+
+            connection.query(
+                `SELECT p.player_id, p.player_name, g.current_player_id
+                 FROM Player AS p
+                 JOIN Game AS g ON g.game_id = p.game_id
+                 WHERE p.user_id = ?
+                   AND p.game_id = ?
+                   AND p.is_bankrupt = 0
+                   AND g.game_status = 'in_progress'
+                 FOR UPDATE`,
+                [userId, gameId],
+                (playerErr, players) => {
+                    if (playerErr) {
+                        failTransaction(playerErr);
+                        return;
+                    }
+
+                    if (players.length === 0) {
+                        failTransaction(
+                            new Error('You are not an active player in this game.')
+                        );
+                        return;
+                    }
+
+                    const player = players[0];
+
+                    if (Number(player.player_id) !== Number(player.current_player_id)) {
+                        failTransaction(
+                            new Error('It is not your turn in an active game.')
+                        );
+                        return;
+                    }
+
+                    connection.query(
+                        `SELECT property_id, property_name, price, color_group
+                         FROM Property
+                         WHERE property_id = ?
+                         FOR UPDATE`,
+                        [propertyId],
+                        (propertyErr, properties) => {
+                            if (propertyErr) {
+                                failTransaction(propertyErr);
+                                return;
+                            }
+
+                            if (properties.length === 0) {
+                                failTransaction(new Error('Property not found.'));
+                                return;
+                            }
+
+                            const property = properties[0];
+
+                            connection.query(
+                                `SELECT mortgaged
+                                 FROM Player_Property
+                                 WHERE player_id = ?
+                                   AND property_id = ?
+                                 FOR UPDATE`,
+                                [player.player_id, propertyId],
+                                (ownershipErr, ownershipRows) => {
+                                    if (ownershipErr) {
+                                        failTransaction(ownershipErr);
+                                        return;
+                                    }
+
+                                    if (ownershipRows.length === 0) {
+                                        failTransaction(
+                                            new Error('You do not own this property.')
+                                        );
+                                        return;
+                                    }
+
+                                    if (Number(ownershipRows[0].mortgaged) === 1) {
+                                        failTransaction(
+                                            new Error('This property is already mortgaged.')
+                                        );
+                                        return;
+                                    }
+
+                                    connection.query(
+                                        `SELECT owned.houses, owned.hotels
+                                         FROM Property AS group_property
+                                         LEFT JOIN Player_Property AS owned
+                                           ON owned.property_id =
+                                              group_property.property_id
+                                          AND owned.player_id IN (
+                                              SELECT player_id
+                                              FROM Player
+                                              WHERE game_id = ?
+                                          )
+                                         WHERE group_property.color_group = ?
+                                         FOR UPDATE`,
+                                        [gameId, property.color_group],
+                                        (groupErr, groupProperties) => {
+                                            if (groupErr) {
+                                                failTransaction(groupErr);
+                                                return;
+                                            }
+
+                                            const hasBuildings = groupProperties.some(
+                                                groupProperty =>
+                                                    Number(groupProperty.houses || 0) > 0 ||
+                                                    Number(groupProperty.hotels || 0) > 0
+                                            );
+
+                                            if (hasBuildings) {
+                                                failTransaction(
+                                                    new Error(
+                                                        'Sell all houses and hotels in this color set before mortgaging.'
+                                                    )
+                                                );
+                                                return;
+                                            }
+
+                                            const mortgageValue =
+                                                Number(property.price) / 2;
+
+                                            if (
+                                                !Number.isFinite(mortgageValue) ||
+                                                mortgageValue <= 0
+                                            ) {
+                                                failTransaction(
+                                                    new Error(
+                                                        'The mortgage value is not set correctly.'
+                                                    )
+                                                );
+                                                return;
+                                            }
+
+                                            connection.query(
+                                                `UPDATE Player_Property
+                                                 SET mortgaged = 1
+                                                 WHERE player_id = ?
+                                                   AND property_id = ?
+                                                   AND mortgaged = 0`,
+                                                [player.player_id, propertyId],
+                                                (updateErr, updateResult) => {
+                                                    if (updateErr) {
+                                                        failTransaction(updateErr);
+                                                        return;
+                                                    }
+
+                                                    if (updateResult.affectedRows !== 1) {
+                                                        failTransaction(
+                                                            new Error(
+                                                                'The property mortgage status changed. Refresh and try again.'
+                                                            )
+                                                        );
+                                                        return;
+                                                    }
+
+                                                    connection.query(
+                                                        `UPDATE Player
+                                                         SET money = money + ?
+                                                         WHERE player_id = ?
+                                                           AND game_id = ?
+                                                           AND is_bankrupt = 0`,
+                                                        [
+                                                            mortgageValue,
+                                                            player.player_id,
+                                                            gameId
+                                                        ],
+                                                        (moneyErr, moneyResult) => {
+                                                            if (moneyErr) {
+                                                                failTransaction(moneyErr);
+                                                                return;
+                                                            }
+
+                                                            if (
+                                                                moneyResult.affectedRows !== 1
+                                                            ) {
+                                                                failTransaction(
+                                                                    new Error(
+                                                                        'Could not add the mortgage money to your balance.'
+                                                                    )
+                                                                );
+                                                                return;
+                                                            }
+
+                                                            connection.query(
+                                                                `INSERT INTO Game_Transaction
+                                                                    (
+                                                                        game_id,
+                                                                        amount,
+                                                                        transaction_type,
+                                                                        player_id
+                                                                    )
+                                                                 VALUES (?, ?, ?, ?)`,
+                                                                [
+                                                                    gameId,
+                                                                    mortgageValue,
+                                                                    'Property Mortgage',
+                                                                    player.player_id
+                                                                ],
+                                                                transactionErr => {
+                                                                    if (transactionErr) {
+                                                                        failTransaction(
+                                                                            transactionErr
+                                                                        );
+                                                                        return;
+                                                                    }
+
+                                                                    connection.commit(
+                                                                        commitErr => {
+                                                                            if (commitErr) {
+                                                                                failTransaction(
+                                                                                    commitErr
+                                                                                );
+                                                                                return;
+                                                                            }
+
+                                                                            finished = true;
+                                                                            connection.release();
+                                                                            callback(null, {
+                                                                                propertyId:
+                                                                                    property.property_id,
+                                                                                propertyName:
+                                                                                    property.property_name,
+                                                                                mortgageValue,
+                                                                                playerName:
+                                                                                    player.player_name
+                                                                            });
+                                                                        }
+                                                                    );
+                                                                }
+                                                            );
+                                                        }
+                                                    );
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+        });
+    });
+}
+
+function unmortgageProperty(db, userId, gameId, propertyId, callback) {
+    if (!Number.isSafeInteger(userId) || userId <= 0) {
+        callback(new Error('Invalid user ID.'));
+        return;
+    }
+
+    if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+        callback(new Error('Invalid game ID.'));
+        return;
+    }
+
+    if (!Number.isSafeInteger(propertyId) || propertyId <= 0) {
+        callback(new Error('Invalid property ID.'));
+        return;
+    }
+
+    db.getConnection((connectionErr, connection) => {
+        if (connectionErr) {
+            callback(connectionErr);
+            return;
+        }
+
+        connection.beginTransaction(beginErr => {
+            if (beginErr) {
+                connection.release();
+                callback(beginErr);
+                return;
+            }
+
+            let finished = false;
+
+            const failTransaction = error => {
+                if (finished) return;
+                finished = true;
+
+                connection.rollback(() => {
+                    connection.release();
+                    callback(error);
+                });
+            };
+
+            connection.query(
+                `SELECT p.player_id, p.player_name, g.current_player_id
+                 FROM Player AS p
+                 JOIN Game AS g ON g.game_id = p.game_id
+                 WHERE p.user_id = ?
+                   AND p.game_id = ?
+                   AND p.is_bankrupt = 0
+                   AND g.game_status = 'in_progress'
+                 FOR UPDATE`,
+                [userId, gameId],
+                (playerErr, players) => {
+                    if (playerErr) {
+                        failTransaction(playerErr);
+                        return;
+                    }
+
+                    if (players.length === 0) {
+                        failTransaction(
+                            new Error('You are not an active player in this game.')
+                        );
+                        return;
+                    }
+
+                    const player = players[0];
+
+                    if (Number(player.player_id) !== Number(player.current_player_id)) {
+                        failTransaction(
+                            new Error('It is not your turn in an active game.')
+                        );
+                        return;
+                    }
+
+                    connection.query(
+                        `SELECT
+                             prop.property_id,
+                             prop.property_name,
+                             prop.price,
+                             ownership.mortgaged
+                         FROM Property AS prop
+                         JOIN Player_Property AS ownership
+                           ON ownership.property_id = prop.property_id
+                         WHERE prop.property_id = ?
+                           AND ownership.player_id = ?
+                         FOR UPDATE`,
+                        [propertyId, player.player_id],
+                        (propertyErr, properties) => {
+                            if (propertyErr) {
+                                failTransaction(propertyErr);
+                                return;
+                            }
+
+                            if (properties.length === 0) {
+                                failTransaction(
+                                    new Error('You do not own this property.')
+                                );
+                                return;
+                            }
+
+                            const property = properties[0];
+
+                            if (Number(property.mortgaged) !== 1) {
+                                failTransaction(
+                                    new Error('This property is not mortgaged.')
+                                );
+                                return;
+                            }
+
+                            const repaymentAmount = Number(property.price) / 2;
+
+                            if (
+                                !Number.isFinite(repaymentAmount) ||
+                                repaymentAmount <= 0
+                            ) {
+                                failTransaction(
+                                    new Error(
+                                        'The mortgage value is not set correctly.'
+                                    )
+                                );
+                                return;
+                            }
+
+                            connection.query(
+                                `UPDATE Player
+                                 SET money = money - ?
+                                 WHERE player_id = ?
+                                   AND game_id = ?
+                                   AND is_bankrupt = 0
+                                   AND money >= ?`,
+                                [
+                                    repaymentAmount,
+                                    player.player_id,
+                                    gameId,
+                                    repaymentAmount
+                                ],
+                                (moneyErr, moneyResult) => {
+                                    if (moneyErr) {
+                                        failTransaction(moneyErr);
+                                        return;
+                                    }
+
+                                    if (moneyResult.affectedRows !== 1) {
+                                        failTransaction(
+                                            new Error(
+                                                'You do not have enough money to lift this mortgage.'
+                                            )
+                                        );
+                                        return;
+                                    }
+
+                                    connection.query(
+                                        `UPDATE Player_Property
+                                         SET mortgaged = 0
+                                         WHERE player_id = ?
+                                           AND property_id = ?
+                                           AND mortgaged = 1`,
+                                        [player.player_id, propertyId],
+                                        (updateErr, updateResult) => {
+                                            if (updateErr) {
+                                                failTransaction(updateErr);
+                                                return;
+                                            }
+
+                                            if (updateResult.affectedRows !== 1) {
+                                                failTransaction(
+                                                    new Error(
+                                                        'The property mortgage status changed. Refresh and try again.'
+                                                    )
+                                                );
+                                                return;
+                                            }
+
+                                            connection.query(
+                                                `INSERT INTO Game_Transaction
+                                                    (
+                                                        game_id,
+                                                        amount,
+                                                        transaction_type,
+                                                        player_id
+                                                    )
+                                                 VALUES (?, ?, ?, ?)`,
+                                                [
+                                                    gameId,
+                                                    -repaymentAmount,
+                                                    'Property Unmortgage',
+                                                    player.player_id
+                                                ],
+                                                transactionErr => {
+                                                    if (transactionErr) {
+                                                        failTransaction(transactionErr);
+                                                        return;
+                                                    }
+
+                                                    connection.commit(commitErr => {
+                                                        if (commitErr) {
+                                                            failTransaction(commitErr);
+                                                            return;
+                                                        }
+
+                                                        finished = true;
+                                                        connection.release();
+                                                        callback(null, {
+                                                            propertyId:
+                                                                property.property_id,
+                                                            propertyName:
+                                                                property.property_name,
+                                                            repaymentAmount,
+                                                            playerName:
+                                                                player.player_name
+                                                        });
+                                                    });
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+                        }
+                    );
+                }
+            );
+        });
+    });
+}
+
 function payRent(db, userId, gameId, callback, rentOptions = {}) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
         callback(new Error('Invalid user ID.'));
@@ -998,5 +1505,7 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
 module.exports = {
     purchaseProperty,
     purchaseBuilding,
+    mortgageProperty,
+    unmortgageProperty,
     payRent
 };

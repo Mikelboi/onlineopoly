@@ -1013,6 +1013,12 @@
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
         }
 
+        .property-card-dialog[open].has-mortgage-action {
+            display: flex;
+            flex-direction: column;
+            min-height: 360px;
+        }
+
         .property-card-dialog::backdrop {
             background: rgba(20, 30, 22, 0.58);
         }
@@ -1042,6 +1048,12 @@
 
         .property-card-content {
             padding: 12px 20px 20px;
+        }
+
+        .property-card-dialog.has-mortgage-action .property-card-content {
+            display: flex;
+            flex: 1;
+            flex-direction: column;
         }
 
         .property-card-content h2 {
@@ -1083,6 +1095,62 @@
         .property-card-building-details dd {
             font-weight: bold;
             text-align: right;
+        }
+
+        #property-card-mortgage-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 7px;
+            margin-top: auto;
+            padding-top: 14px;
+            border-top: 1px solid #c8d5c5;
+            text-align: center;
+        }
+
+        #property-card-mortgage-actions[hidden] {
+            display: none;
+        }
+
+        #mortgage-property-button,
+        #unmortgage-property-button {
+            min-width: 190px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #mortgage-property-button {
+            border: 1px solid #9d1c1c;
+            background: #c62828;
+        }
+
+        #mortgage-property-button:hover:not(:disabled) {
+            background: #a91f1f;
+        }
+
+        #unmortgage-property-button {
+            border: 1px solid #1e6e2f;
+            background: #238636;
+        }
+
+        #unmortgage-property-button:hover:not(:disabled) {
+            background: #1e6e2f;
+        }
+
+        #mortgage-property-button:disabled,
+        #unmortgage-property-button:disabled {
+            cursor: wait;
+            opacity: 0.65;
+        }
+
+        #mortgage-action-message {
+            margin: 0;
+            color: #435443;
+            font-size: 12px;
         }
 
         .property-card-close {
@@ -1709,6 +1777,19 @@
                         class="property-card-building-details"
                     ></dl>
                 </section>
+                <section id="property-card-mortgage-actions" hidden>
+                    <button id="mortgage-property-button" type="button">
+                        Mortgage Property
+                    </button>
+                    <button
+                        id="unmortgage-property-button"
+                        type="button"
+                        hidden
+                    >
+                        Unmortgage Property
+                    </button>
+                    <p id="mortgage-action-message" aria-live="polite"></p>
+                </section>
             </div>
         </dialog>
 
@@ -1797,6 +1878,52 @@
 
     socket.on('connect_error', (error) => {
         console.error('Socket connection error:', error.message);
+    });
+
+    socket.on('propertyMortgaged', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        diceResult.textContent =
+            `${data.playerName} mortgaged ${data.propertyName} ` +
+            `for $${data.mortgageValue}.`;
+
+        const latestGameData = await loadPlayerTokens();
+
+        if (propertyCardDialog.open && data.propertyId) {
+            const updatedProperty = latestGameData?.properties?.find(
+                property =>
+                    Number(property.property_id) === Number(data.propertyId)
+            );
+
+            if (updatedProperty) {
+                showPropertyCard(updatedProperty);
+            }
+        }
+    });
+
+    socket.on('propertyUnmortgaged', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        diceResult.textContent =
+            `${data.playerName} unmortgaged ${data.propertyName} ` +
+            `for $${data.repaymentAmount}.`;
+
+        const latestGameData = await loadPlayerTokens();
+
+        if (propertyCardDialog.open && data.propertyId) {
+            const updatedProperty = latestGameData?.properties?.find(
+                property =>
+                    Number(property.property_id) === Number(data.propertyId)
+            );
+
+            if (updatedProperty) {
+                showPropertyCard(updatedProperty);
+            }
+        }
     });
 
     socket.on('propertyPurchased', async (data) => {
@@ -1982,6 +2109,103 @@ socket.on('auctionFinished', async (data) => {
 
         propertyCardClose.addEventListener('click', () => {
             propertyCardDialog.close();
+        });
+
+        let currentUserPlayerId = null;
+        let isCurrentUserTurn = false;
+        let displayedPropertyCard = null;
+        let selectedMortgageProperty = null;
+        let selectedUnmortgageProperty = null;
+
+        const propertyCardMortgageActions =
+            document.getElementById('property-card-mortgage-actions');
+        const mortgagePropertyButton =
+            document.getElementById('mortgage-property-button');
+        const unmortgagePropertyButton =
+            document.getElementById('unmortgage-property-button');
+        const mortgageActionMessage =
+            document.getElementById('mortgage-action-message');
+
+        mortgagePropertyButton.addEventListener('click', async () => {
+            if (!selectedMortgageProperty) return;
+
+            const propertyId = Number(selectedMortgageProperty.property_id);
+            mortgagePropertyButton.disabled = true;
+            mortgageActionMessage.textContent = 'Processing mortgage...';
+
+            try {
+                const response = await fetch('/games/mortgage-property', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ gameId, propertyId })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message || 'Could not mortgage this property.'
+                    );
+                }
+
+                diceResult.textContent = data.message;
+
+                const latestGameData = await loadPlayerTokens();
+                const updatedProperty = latestGameData?.properties?.find(
+                    property => Number(property.property_id) === propertyId
+                );
+
+                if (updatedProperty) {
+                    showPropertyCard(updatedProperty);
+                }
+            } catch (error) {
+                mortgageActionMessage.textContent = error.message;
+            } finally {
+                mortgagePropertyButton.disabled = false;
+            }
+        });
+
+        unmortgagePropertyButton.addEventListener('click', async () => {
+            if (!selectedUnmortgageProperty) return;
+
+            const propertyId = Number(selectedUnmortgageProperty.property_id);
+            unmortgagePropertyButton.disabled = true;
+            mortgageActionMessage.textContent = 'Processing unmortgage...';
+
+            try {
+                const response = await fetch('/games/unmortgage-property', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ gameId, propertyId })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message || 'Could not unmortgage this property.'
+                    );
+                }
+
+                diceResult.textContent = data.message;
+
+                const latestGameData = await loadPlayerTokens();
+                const updatedProperty = latestGameData?.properties?.find(
+                    property => Number(property.property_id) === propertyId
+                );
+
+                if (updatedProperty) {
+                    showPropertyCard(updatedProperty);
+                }
+            } catch (error) {
+                mortgageActionMessage.textContent = error.message;
+            } finally {
+                unmortgagePropertyButton.disabled = false;
+            }
         });
 
         const chanceCardDialog = document.getElementById('chance-card-dialog');
@@ -2842,6 +3066,7 @@ placeBidButton.addEventListener('click', async () => {
         }
 
         function showPropertyCard(property) {
+            displayedPropertyCard = property;
             const normalizeName = name =>
                 String(name || '')
                     .trim()
@@ -3004,6 +3229,33 @@ placeBidButton.addEventListener('click', async () => {
             });
             document.getElementById('property-card-building-costs-section').hidden =
                 buildingRows.length === 0;
+            const isOwnedByCurrentUser =
+                currentUserPlayerId !== null &&
+                Number(property.player_id) === currentUserPlayerId;
+            const isMortgaged = Number(property.mortgaged) === 1;
+            const canMortgage =
+                isOwnedByCurrentUser && isCurrentUserTurn && !isMortgaged;
+            const canUnmortgage =
+                isOwnedByCurrentUser && isCurrentUserTurn && isMortgaged;
+
+            selectedMortgageProperty = canMortgage ? property : null;
+            selectedUnmortgageProperty = canUnmortgage ? property : null;
+
+            propertyCardDialog.classList.toggle(
+                'has-mortgage-action',
+                canMortgage || canUnmortgage
+            );
+            propertyCardMortgageActions.hidden = !(canMortgage || canUnmortgage);
+
+            mortgagePropertyButton.hidden = !canMortgage;
+            unmortgagePropertyButton.hidden = !canUnmortgage;
+
+            mortgagePropertyButton.textContent =
+                `Mortgage for ${money(Number(property.price) / 2, 0)}`;
+            unmortgagePropertyButton.textContent =
+                `Unmortgage for ${money(Number(property.price) / 2, 0)}`;
+
+            mortgageActionMessage.textContent = '';
 
             if (!propertyCardDialog.open) {
                 propertyCardDialog.showModal();
@@ -3495,9 +3747,13 @@ placeBidButton.addEventListener('click', async () => {
                 const myPlayer = data.players.find(
                     player => Number(player.user_id) === Number(data.currentUserId)
                 );
-                const currentUserPlayerId = myPlayer
+                currentUserPlayerId = myPlayer
                     ? Number(myPlayer.player_id)
                     : null;
+                isCurrentUserTurn = Boolean(
+                    myPlayer &&
+                    Number(myPlayer.player_id) === Number(currentPlayerId)
+                );
 
                 displayPlayerCards(
                     data.players,
@@ -3505,6 +3761,18 @@ placeBidButton.addEventListener('click', async () => {
                     currentUserPlayerId,
                     currentPlayerId
                 );
+
+                if (propertyCardDialog.open && displayedPropertyCard) {
+                    const updatedProperty = (data.properties || []).find(
+                        property =>
+                            Number(property.property_id) ===
+                            Number(displayedPropertyCard.property_id)
+                    );
+
+                    if (updatedProperty) {
+                        showPropertyCard(updatedProperty);
+                    }
+                }
 
                 const useJailCardButton =
                     document.getElementById('use-jail-card-button');
