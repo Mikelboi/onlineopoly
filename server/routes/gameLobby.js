@@ -559,12 +559,43 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                                             return;
                                         }
 
-                                        sendJson(res, 200, {
-                                            game: games[0],
-                                            players,
-                                            properties,
-                                            currentUserId: session.userId
-                                        });
+                                        db.query(
+                                            `SELECT
+                                                 debt.pending_debt_id,
+                                                 debt.debtor_player_id,
+                                                 debt.creditor_player_id,
+                                                 debt.amount_due,
+                                                 debt.debt_source,
+                                                 debtor.player_name AS debtor_name,
+                                                 creditor.player_name AS creditor_name
+                                             FROM Pending_Debt AS debt
+                                             JOIN Player AS debtor
+                                               ON debtor.player_id = debt.debtor_player_id
+                                              AND debtor.game_id = debt.game_id
+                                             LEFT JOIN Player AS creditor
+                                               ON creditor.player_id = debt.creditor_player_id
+                                              AND creditor.game_id = debt.game_id
+                                             WHERE debt.game_id = ?
+                                             ORDER BY debt.pending_debt_id`,
+                                            [gameId],
+                                            (debtErr, pendingDebts) => {
+                                                if (debtErr) {
+                                                    console.error('Load pending debts error:', debtErr);
+                                                    sendJson(res, 500, {
+                                                        message: 'Could not load pending debts.'
+                                                    });
+                                                    return;
+                                                }
+
+                                                sendJson(res, 200, {
+                                                    game: games[0],
+                                                    players,
+                                                    properties,
+                                                    pendingDebts,
+                                                    currentUserId: session.userId
+                                                });
+                                            }
+                                        );
                                     }
                                 );
 

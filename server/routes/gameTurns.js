@@ -96,7 +96,14 @@ function handleGameTurnRequest(req, res, { db, getSession, sendJson, readJsonBod
                     const currentPlayerId = games[0].current_player_id;
     
                     db.query(
-                        `SELECT player_id
+                        `SELECT
+                             player_id,
+                             (
+                                 SELECT COUNT(*)
+                                 FROM Pending_Debt AS debt
+                                 WHERE debt.game_id = Player.game_id
+                                   AND debt.debtor_player_id = Player.player_id
+                             ) AS pending_debt_count
                          FROM Player
                          WHERE player_id = ?
                            AND game_id = ?
@@ -115,6 +122,14 @@ function handleGameTurnRequest(req, res, { db, getSession, sendJson, readJsonBod
                             if (players.length === 0) {
                                 sendJson(res, 403, {
                                     message: 'It is not your turn.'
+                                });
+                                return;
+                            }
+
+                            if (Number(players[0].pending_debt_count) > 0) {
+                                sendJson(res, 409, {
+                                    message:
+                                        'Pay or resolve your pending debts before ending your turn.'
                                 });
                                 return;
                             }

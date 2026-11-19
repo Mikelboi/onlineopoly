@@ -1,6 +1,7 @@
 const {
     purchaseProperty,
     purchaseBuilding,
+    sellBuilding,
     mortgageProperty,
     unmortgageProperty
 } = require('../Gameplay/properties');
@@ -191,6 +192,83 @@ if (req.method === 'POST' && route === '/games/buy-property') {
 
         return true;
     }
+
+    if (req.method === 'POST' && route === '/games/sell-building') {
+    const session = getSession(req);
+
+    if (!session) {
+        sendJson(res, 401, {
+            message: 'Please log in to sell a building.'
+        });
+        return true;
+    }
+
+    readJsonBody(req, res, requestData => {
+        const gameId = Number(requestData.gameId);
+        const propertyId = Number(requestData.propertyId);
+
+        if (
+            !Number.isSafeInteger(gameId) ||
+            gameId <= 0 ||
+            !Number.isSafeInteger(propertyId) ||
+            propertyId <= 0
+        ) {
+            sendJson(res, 400, {
+                message: 'Invalid building sale request.'
+            });
+            return;
+        }
+
+        sellBuilding(
+            db,
+            session.userId,
+            gameId,
+            propertyId,
+            (saleErr, building) => {
+                if (saleErr) {
+                    const expectedMessages = new Set([
+                        'It is not your turn in an active game.',
+                        'You do not own this property.',
+                        'You must own the full color set to sell buildings.',
+                        'Sell buildings evenly across the color set.',
+                        'This property has no buildings to sell.',
+                        'Could not sell this building.',
+                        'Could not add the sale money to your balance.'
+                    ]);
+
+                    if (!expectedMessages.has(saleErr.message)) {
+                        console.error('Sell building error:', saleErr);
+                        sendJson(res, 500, {
+                            message: 'Could not sell the building.'
+                        });
+                        return;
+                    }
+
+                    sendJson(res, 409, {
+                        message: saleErr.message
+                    });
+                    return;
+                }
+
+                if (io) {
+                    io.to(`game:${gameId}`).emit('buildingSold', {
+                        gameId,
+                        ...building
+                    });
+                }
+
+                sendJson(res, 200, {
+                    message:
+                        `You sold a ${building.buildingType} on ` +
+                        `${building.propertyName} for $${building.saleValue}.`,
+                    building
+                });
+            }
+        );
+    });
+
+    return true;
+}
 
     if (req.method === 'POST' && route === '/games/mortgage-property') {
         const session = getSession(req);

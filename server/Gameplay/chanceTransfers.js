@@ -146,11 +146,13 @@ function applyPlayerTransferCard(db, gameId, currentPlayerId, card, callback) {
                                 }
 
                                 if (result.affectedRows !== 1) {
-                                    failTransaction(
-                                        new Error(
-                                            'A player does not have enough money for this transfer.'
-                                        )
+                                    const transferError = new Error(
+                                        'A player does not have enough money for this transfer.'
                                     );
+                                    transferError.amountOwed = totalAmount;
+                                    transferError.creditorCount =
+                                        otherPlayers.length;
+                                    failTransaction(transferError);
                                     return;
                                 }
 

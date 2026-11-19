@@ -602,6 +602,273 @@ function purchaseBuilding(db, userId, gameId, propertyId, buildingType, callback
         });
     });
 }
+function sellBuilding(db, userId, gameId, propertyId, callback) {
+    if (
+        !Number.isSafeInteger(Number(userId)) ||
+        !Number.isSafeInteger(Number(gameId)) ||
+        !Number.isSafeInteger(Number(propertyId))
+    ) {
+        callback(new Error('Invalid building sale request.'));
+        return;
+    }
+
+    db.getConnection((connectionErr, connection) => {
+        if (connectionErr) {
+            callback(connectionErr);
+            return;
+        }
+
+        connection.beginTransaction(beginErr => {
+            if (beginErr) {
+                connection.release();
+                callback(beginErr);
+                return;
+            }
+
+            let finished = false;
+
+            const failTransaction = error => {
+                if (finished) return;
+                finished = true;
+
+                connection.rollback(() => {
+                    connection.release();
+                    callback(error);
+                });
+            };
+
+            const queryInTransaction = (sql, values = []) =>
+                new Promise((resolve, reject) => {
+                    connection.query(sql, values, (error, result) => {
+                        if (error) {
+                            reject(error);
+                            return;
+                        }
+
+                        resolve(result);
+                    });
+                });
+
+            (async () => {
+                try {
+                    const players = await queryInTransaction(
+                        `SELECT p.player_id, p.player_name
+                         FROM Player AS p
+                         JOIN Game AS g ON g.game_id = p.game_id
+                         WHERE p.user_id = ?
+                           AND p.game_id = ?
+                           AND p.is_bankrupt = 0
+                           AND g.game_status = 'in_progress'
+                           AND g.current_player_id = p.player_id
+                         FOR UPDATE`,
+                        [Number(userId), Number(gameId)]
+                    );
+
+                    if (players.length === 0) {
+                        throw new Error('It is not your turn in an active game.');
+                    }
+
+                    const player = players[0];
+
+                    const targetProperties = await queryInTransaction(
+                        `SELECT
+                             prop.property_id,
+                             prop.property_name,
+                             prop.board_position,
+                             prop.color_group,
+                             prop.house_cost,
+                             prop.hotel_cost,
+                             pp.houses,
+                             pp.hotels
+                         FROM Property AS prop
+                         JOIN Player_Property AS pp
+                           ON pp.property_id = prop.property_id
+                         WHERE prop.property_id = ?
+                           AND pp.player_id = ?
+                         FOR UPDATE`,
+                        [Number(propertyId), player.player_id]
+                    );
+
+                    if (targetProperties.length === 0) {
+                        throw new Error('You do not own this property.');
+                    }
+
+                    const property = targetProperties[0];
+                    const colorProperties = await queryInTransaction(
+                        `SELECT
+                             prop.property_id,
+                             pp.player_id AS owner_player_id,
+                             pp.houses,
+                             pp.hotels
+                         FROM Property AS prop
+                         LEFT JOIN Player_Property AS pp
+                           ON pp.property_id = prop.property_id
+                          AND pp.player_id IN (
+                              SELECT player_id
+                              FROM Player
+                              WHERE game_id = ?
+                          )
+                         WHERE prop.color_group = ?
+                           AND prop.board_position NOT IN (5, 12, 15, 25, 28, 35)
+                         ORDER BY prop.board_position
+                         FOR UPDATE`,
+                        [Number(gameId), property.color_group]
+                    );
+
+                    const ownsFullSet = colorProperties.every(
+                        colorProperty =>
+                            Number(colorProperty.owner_player_id) ===
+                            Number(player.player_id)
+                    );
+
+                    if (!ownsFullSet) {
+                        throw new Error(
+                            'You must own the full color set to sell buildings.'
+                        );
+                    }
+
+                    const targetLevel =
+                        Number(property.hotels) > 0
+                            ? 5
+                            : Number(property.houses);
+
+                    const highestOtherLevel = colorProperties.reduce(
+                        (highest, colorProperty) => {
+                            if (
+                                Number(colorProperty.property_id) ===
+                                Number(property.property_id)
+                            ) {
+                                return highest;
+                            }
+
+                            const level =
+                                Number(colorProperty.hotels) > 0
+                                    ? 5
+                                    : Number(colorProperty.houses || 0);
+
+                            return Math.max(highest, level);
+                        },
+                        0
+                    );
+
+                    let buildingType;
+                    let saleValue;
+                    let buildingUpdate;
+
+                    if (Number(property.hotels) > 0) {
+                        buildingType = 'hotel';
+                        saleValue = Math.floor(
+                            Number(property.hotel_cost) / 2
+                        );
+
+                        if (4 < highestOtherLevel) {
+                            throw new Error(
+                                'Sell buildings evenly across the color set.'
+                            );
+                        }
+
+                        buildingUpdate = await queryInTransaction(
+                            `UPDATE Player_Property
+                             SET houses = 4,
+                                 hotels = 0
+                             WHERE player_id = ?
+                               AND property_id = ?
+                               AND hotels > 0`,
+                            [player.player_id, property.property_id]
+                        );
+                    } else if (Number(property.houses) > 0) {
+                        buildingType = 'house';
+                        saleValue = Math.floor(
+                            Number(property.house_cost) / 2
+                        );
+
+                        if (targetLevel - 1 < highestOtherLevel) {
+                            throw new Error(
+                                'Sell buildings evenly across the color set.'
+                            );
+                        }
+
+                        buildingUpdate = await queryInTransaction(
+                            `UPDATE Player_Property
+                             SET houses = houses - 1
+                             WHERE player_id = ?
+                               AND property_id = ?
+                               AND houses > 0
+                               AND hotels = 0`,
+                            [player.player_id, property.property_id]
+                        );
+                    } else {
+                        throw new Error('This property has no buildings to sell.');
+                    }
+
+                    if (
+                        !Number.isSafeInteger(saleValue) ||
+                        saleValue <= 0 ||
+                        buildingUpdate.affectedRows !== 1
+                    ) {
+                        throw new Error('Could not sell this building.');
+                    }
+
+                    const moneyUpdate = await queryInTransaction(
+                        `UPDATE Player
+                         SET money = money + ?
+                         WHERE player_id = ?
+                           AND game_id = ?
+                           AND is_bankrupt = 0`,
+                        [saleValue, player.player_id, Number(gameId)]
+                    );
+
+                    if (moneyUpdate.affectedRows !== 1) {
+                        throw new Error('Could not add the sale money to your balance.');
+                    }
+
+                    await queryInTransaction(
+                        `INSERT INTO Game_Transaction
+                            (game_id, amount, transaction_type, player_id)
+                         VALUES (?, ?, ?, ?)`,
+                        [
+                            Number(gameId),
+                            saleValue,
+                            buildingType === 'hotel'
+                                ? 'Hotel Sale'
+                                : 'House Sale',
+                            player.player_id
+                        ]
+                    );
+
+                    await new Promise((resolve, reject) => {
+                        connection.commit(error => {
+                            if (error) {
+                                reject(error);
+                                return;
+                            }
+
+                            resolve();
+                        });
+                    });
+
+                    finished = true;
+                    connection.release();
+                    callback(null, {
+                        propertyId: Number(property.property_id),
+                        propertyName: property.property_name,
+                        playerId: Number(player.player_id),
+                        playerName: player.player_name,
+                        buildingType,
+                        saleValue,
+                        houses:
+                            buildingType === 'hotel'
+                                ? 4
+                                : Number(property.houses) - 1,
+                        hotels: 0
+                    });
+                } catch (error) {
+                    failTransaction(error);
+                }
+            })();
+        });
+    });
+}
 
 function mortgageProperty(db, userId, gameId, propertyId, callback) {
     if (!Number.isSafeInteger(userId) || userId <= 0) {
@@ -1381,15 +1648,18 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                         return;
                                     }
 
-                                    if (Number(player.money) < rent) {
-                                        failTransaction(
-                                            new Error(
-                                                'You do not have enough money to pay rent.'
-                                            )
+                                   if (Number(player.money) < rent) {
+                                        const insufficientFundsError = new Error(
+                                            'You do not have enough money to pay rent.'
                                         );
+                                        insufficientFundsError.amountOwed =
+                                            Number(rent);
+                                        insufficientFundsError.creditorPlayerId =
+                                            Number(owner.player_id);
+
+                                        failTransaction(insufficientFundsError);
                                         return;
                                     }
-
                                     connection.query(
                                         `UPDATE Player
                                          SET money = money - ?
@@ -1505,6 +1775,7 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
 module.exports = {
     purchaseProperty,
     purchaseBuilding,
+    sellBuilding,
     mortgageProperty,
     unmortgageProperty,
     payRent

@@ -67,6 +67,55 @@
             margin: 0;
         }
 
+        #pending-debts-panel {
+            width: min(100%, 360px);
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 8px;
+            border: 1px solid #526b80;
+            border-radius: 8px;
+            background: #f7f9fc;
+            color: #222;
+            box-sizing: border-box;
+        }
+
+        #pending-debts-panel[hidden] {
+            display: none;
+        }
+
+        .pending-debt-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 5px 0;
+            border-bottom: 1px solid #d5dce3;
+            text-align: left;
+        }
+
+        .pending-debt-row:last-child {
+            border-bottom: 0;
+        }
+
+        .pending-debt-description {
+            font-size: 12px;
+        }
+
+        .pending-debt-pay-button {
+            flex-shrink: 0;
+            padding: 5px 8px;
+            border: 0;
+            border-radius: 5px;
+            background: #238636;
+            color: white;
+            cursor: pointer;
+        }
+
+        .pending-debt-pay-button:disabled {
+            background: #888;
+            cursor: not-allowed;
+        }
+
         /* PLAYER DASHBOARD LAYOUT */
 
         #game-controls {
@@ -1113,7 +1162,8 @@
         }
 
         #mortgage-property-button,
-        #unmortgage-property-button {
+        #unmortgage-property-button,
+        #sell-building-button {
             min-width: 190px;
             padding: 10px 18px;
             border-radius: 8px;
@@ -1132,17 +1182,20 @@
             background: #a91f1f;
         }
 
-        #unmortgage-property-button {
+        #unmortgage-property-button,
+        #sell-building-button {
             border: 1px solid #1e6e2f;
             background: #238636;
         }
 
-        #unmortgage-property-button:hover:not(:disabled) {
+        #unmortgage-property-button:hover:not(:disabled),
+        #sell-building-button:hover:not(:disabled) {
             background: #1e6e2f;
         }
 
         #mortgage-property-button:disabled,
-        #unmortgage-property-button:disabled {
+        #unmortgage-property-button:disabled,
+        #sell-building-button:disabled {
             cursor: wait;
             opacity: 0.65;
         }
@@ -1697,6 +1750,10 @@
             <div id="game-controls">
         <p id="current-turn-indicator">Loading turn...</p>
         <p id="diceResult">Roll the dice to move!</p>
+        <section id="pending-debts-panel" aria-live="polite" hidden>
+            <strong>Pending payments</strong>
+            <div id="pending-debts-list"></div>
+        </section>
         <button id="use-jail-card-button" type="button" hidden>
             Use Get Out of Jail Free Card
         </button>
@@ -1788,6 +1845,9 @@
                     >
                         Unmortgage Property
                     </button>
+                    <button id="sell-building-button" type="button" hidden>
+                        Sell Building
+                    </button>
                     <p id="mortgage-action-message" aria-live="polite"></p>
                 </section>
             </div>
@@ -1845,6 +1905,48 @@
             `${data.propertyName} now has ${buildingName}.`;
 
         await loadPlayerTokens();
+    });
+
+    socket.on('buildingSold', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        diceResult.textContent =
+            `${data.playerName} sold a ${data.buildingType} on ` +
+            `${data.propertyName} for $${data.saleValue}.`;
+
+        await loadPlayerTokens();
+    });
+
+    socket.on('playerBankrupt', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        const latestGameData = await loadPlayerTokens();
+        const winner = data.gameComplete
+            ? latestGameData?.players?.find(
+                player =>
+                    Number(player.player_id) === Number(data.nextPlayerId)
+            )
+            : null;
+
+        if (data.gameComplete) {
+            diceResult.textContent = winner
+                ? `${data.playerName} went bankrupt. ` +
+                    `${winner.player_name} wins the game!`
+                : `${data.playerName} went bankrupt. The game is over.`;
+            return;
+        }
+
+        diceResult.textContent = data.splitCashAmongPlayers
+            ? `${data.playerName} went bankrupt. The bank takes their properties, ` +
+                `and their remaining $${data.cashTransferred} is split among the other players.`
+            : data.creditorPlayerId === null
+                ? `${data.playerName} went bankrupt owing the bank.`
+                : `${data.playerName} went bankrupt. ` +
+                    `${data.creditorName} receives their remaining money and properties.`;
     });
 
     socket.on('turnChanged', async (data) => {
@@ -2101,9 +2203,34 @@ socket.on('auctionFinished', async (data) => {
             await loadPlayerTokens();
         });
 
+        socket.on('taxPaid', async data => {
+            if (Number(data.gameId) !== Number(gameId)) {
+                return;
+            }
+
+            diceResult.textContent =
+                data.taxName === 'Income Tax'
+                    ? `${data.playerName} paid $${data.amount} in income tax.`
+                    : `${data.playerName} paid a $${data.amount} luxury tax.`;
+
+            await loadPlayerTokens();
+        });
+
         const diceResult = document.getElementById('diceResult');
         let isRolling = false;
         let rolledDoubles = false;
+
+        socket.on('pendingDebtPaid', async data => {
+            if (Number(data.gameId) !== Number(gameId)) {
+                return;
+            }
+
+            diceResult.textContent =
+                `${data.debtorName} paid $${data.amountDue} for ` +
+                `${data.debtSource}.`;
+            await loadPlayerTokens();
+        });
+
         const propertyCardDialog = document.getElementById('property-card-dialog');
         const propertyCardClose = document.getElementById('property-card-close');
 
@@ -2116,6 +2243,83 @@ socket.on('auctionFinished', async (data) => {
         let displayedPropertyCard = null;
         let selectedMortgageProperty = null;
         let selectedUnmortgageProperty = null;
+        let selectedBuildingSaleProperty = null;
+
+        function renderPendingDebts(pendingDebts, myPlayer) {
+            const panel = document.getElementById('pending-debts-panel');
+            const list = document.getElementById('pending-debts-list');
+            const debts = pendingDebts || [];
+
+            list.replaceChildren();
+            panel.hidden = debts.length === 0;
+
+            debts.forEach(debt => {
+                const row = document.createElement('div');
+                row.className = 'pending-debt-row';
+
+                const description = document.createElement('span');
+                description.className = 'pending-debt-description';
+                const amount = Number(debt.amount_due);
+                const creditorName =
+                    debt.creditor_name || 'the bank';
+                description.textContent =
+                    `${debt.debtor_name} owes $${amount.toFixed(0)} to ` +
+                    `${creditorName} (${debt.debt_source})`;
+                row.append(description);
+
+                if (
+                    myPlayer &&
+                    Number(debt.debtor_player_id) ===
+                        Number(myPlayer.player_id)
+                ) {
+                    const payButton = document.createElement('button');
+                    payButton.type = 'button';
+                    payButton.className = 'pending-debt-pay-button';
+                    payButton.textContent = `Pay $${amount.toFixed(0)}`;
+                    payButton.disabled =
+                        !isCurrentUserTurn ||
+                        Number(myPlayer.money) < amount;
+
+                    payButton.addEventListener('click', async () => {
+                        payButton.disabled = true;
+                        try {
+                            const response = await fetch(
+                                '/games/pay-pending-debt',
+                                {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        gameId,
+                                        pendingDebtId:
+                                            Number(debt.pending_debt_id)
+                                    })
+                                }
+                            );
+                            const result = await response.json();
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    result.message ||
+                                        'Could not pay the pending debt.'
+                                );
+                            }
+
+                            diceResult.textContent = result.message;
+                            await loadPlayerTokens();
+                        } catch (error) {
+                            diceResult.textContent = error.message;
+                            payButton.disabled = false;
+                        }
+                    });
+
+                    row.append(payButton);
+                }
+
+                list.append(row);
+            });
+        }
 
         const propertyCardMortgageActions =
             document.getElementById('property-card-mortgage-actions');
@@ -2125,6 +2329,8 @@ socket.on('auctionFinished', async (data) => {
             document.getElementById('unmortgage-property-button');
         const mortgageActionMessage =
             document.getElementById('mortgage-action-message');
+        const sellBuildingButton =
+            document.getElementById('sell-building-button');
 
         mortgagePropertyButton.addEventListener('click', async () => {
             if (!selectedMortgageProperty) return;
@@ -2205,6 +2411,49 @@ socket.on('auctionFinished', async (data) => {
                 mortgageActionMessage.textContent = error.message;
             } finally {
                 unmortgagePropertyButton.disabled = false;
+            }
+        });
+
+        sellBuildingButton.addEventListener('click', async () => {
+            if (!selectedBuildingSaleProperty) return;
+
+            const propertyId = Number(
+                selectedBuildingSaleProperty.property_id
+            );
+            sellBuildingButton.disabled = true;
+            mortgageActionMessage.textContent = 'Processing building sale...';
+
+            try {
+                const response = await fetch('/games/sell-building', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ gameId, propertyId })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message || 'Could not sell this building.'
+                    );
+                }
+
+                diceResult.textContent = data.message;
+
+                const latestGameData = await loadPlayerTokens();
+                const updatedProperty = latestGameData?.properties?.find(
+                    property => Number(property.property_id) === propertyId
+                );
+
+                if (updatedProperty) {
+                    showPropertyCard(updatedProperty);
+                }
+            } catch (error) {
+                mortgageActionMessage.textContent = error.message;
+            } finally {
+                sellBuildingButton.disabled = false;
             }
         });
 
@@ -2381,6 +2630,9 @@ socket.on('auctionFinished', async (data) => {
         const data = await response.json();
 
         if (!response.ok) {
+            if (response.status === 409) {
+                await loadPlayerTokens();
+            }
             throw new Error(data.message || 'Could not roll dice.');
         }
 
@@ -3237,23 +3489,41 @@ placeBidButton.addEventListener('click', async () => {
                 isOwnedByCurrentUser && isCurrentUserTurn && !isMortgaged;
             const canUnmortgage =
                 isOwnedByCurrentUser && isCurrentUserTurn && isMortgaged;
+            const hasBuildings =
+                Number(property.houses) > 0 || Number(property.hotels) > 0;
+            const canSellBuilding =
+                isOwnedByCurrentUser && isCurrentUserTurn && hasBuildings;
 
             selectedMortgageProperty = canMortgage ? property : null;
             selectedUnmortgageProperty = canUnmortgage ? property : null;
+            selectedBuildingSaleProperty = canSellBuilding ? property : null;
 
             propertyCardDialog.classList.toggle(
                 'has-mortgage-action',
-                canMortgage || canUnmortgage
+                canMortgage || canUnmortgage || canSellBuilding
             );
-            propertyCardMortgageActions.hidden = !(canMortgage || canUnmortgage);
+            propertyCardMortgageActions.hidden = !(
+                canMortgage || canUnmortgage || canSellBuilding
+            );
 
             mortgagePropertyButton.hidden = !canMortgage;
             unmortgagePropertyButton.hidden = !canUnmortgage;
+            sellBuildingButton.hidden = !canSellBuilding;
 
             mortgagePropertyButton.textContent =
                 `Mortgage for ${money(Number(property.price) / 2, 0)}`;
             unmortgagePropertyButton.textContent =
                 `Unmortgage for ${money(Number(property.price) / 2, 0)}`;
+
+            const saleBuildingType =
+                Number(property.hotels) > 0 ? 'hotel' : 'house';
+            const saleBuildingCost =
+                saleBuildingType === 'hotel'
+                    ? Number(property.hotel_cost)
+                    : Number(property.house_cost);
+
+            sellBuildingButton.textContent =
+                `Sell ${saleBuildingType} for ${money(saleBuildingCost / 2, 0)}`;
 
             mortgageActionMessage.textContent = '';
 
@@ -3753,6 +4023,11 @@ placeBidButton.addEventListener('click', async () => {
                 isCurrentUserTurn = Boolean(
                     myPlayer &&
                     Number(myPlayer.player_id) === Number(currentPlayerId)
+                );
+
+                renderPendingDebts(
+                    data.pendingDebts || [],
+                    myPlayer
                 );
 
                 displayPlayerCards(
