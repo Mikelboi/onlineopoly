@@ -1,3 +1,5 @@
+const { declareBankruptcyAtZero } = require('../Gameplay/bankrupt');
+
 function handleGameAuctionRequest(req, res, { db, getSession, sendJson, readJsonBody, io, advanceAuctionTurn }) {
     const route = req.url.split('?')[0];
 
@@ -754,42 +756,51 @@ function handleGameAuctionRequest(req, res, { db, getSession, sendJson, readJson
                                                                                 });
                                                                             }
                                                                             connection.release();
+                                                                            declareBankruptcyAtZero(
+                                                                                db,
+                                                                                gameId,
+                                                                                Number(auction.highest_bidder_id),
+                                                                                null,
+                                                                                (bankruptcyErr, bankruptcy) => {
+                                                                                    if (bankruptcyErr) {
+                                                                                        console.error('Auction zero-balance bankruptcy error:', bankruptcyErr);
+                                                                                        sendJson(res, 500, { message: 'Auction completed, but bankruptcy could not be processed.' });
+                                                                                        return;
+                                                                                    }
 
-                                                                            if (io) {
-                                                                                io.to(`game:${gameId}`).emit(
-                                                                                    'auctionFinished',
-                                                                                    {
-                                                                                        gameId,
+                                                                                    if (io) {
+                                                                                        const gameRoom = io.to(`game:${gameId}`);
+                                                                                        if (bankruptcy) gameRoom.emit('playerBankrupt', { ...bankruptcy, gameId });
+                                                                                        gameRoom.emit('auctionFinished', {
+                                                                                            gameId,
+                                                                                            auctionId,
+                                                                                            propertyId: auction.property_id,
+                                                                                            propertyName,
+                                                                                            winnerPlayerId: auction.highest_bidder_id,
+                                                                                            winnerPlayerName,
+                                                                                            winningBid: Number(auction.highest_bid),
+                                                                                            status: 'completed',
+                                                                                            turnAdvanced
+                                                                                        });
+                                                                                    }
+
+                                                                                    sendJson(res, 200, {
+                                                                                        message: bankruptcy
+                                                                                            ? `${winnerPlayerName} went bankrupt after the auction.`
+                                                                                            : 'Auction finished and property awarded!',
                                                                                         auctionId,
                                                                                         propertyId: auction.property_id,
                                                                                         propertyName,
-                                                                                        winnerPlayerId:
-                                                                                            auction.highest_bidder_id,
+                                                                                        winnerPlayerId: auction.highest_bidder_id,
                                                                                         winnerPlayerName,
-                                                                                        winningBid: Number(
-                                                                                            auction.highest_bid
-                                                                                        ),
+                                                                                        winningBid: Number(auction.highest_bid),
                                                                                         status: 'completed',
-                                                                                        turnAdvanced
-                                                                                    }
-                                                                                );
-                                                                            }
-
-                                                                            sendJson(res, 200, {
-                                                                                message:
-                                                                                    'Auction finished and property awarded!',
-                                                                                auctionId,
-                                                                                propertyId: auction.property_id,
-                                                                                propertyName,
-                                                                                winnerPlayerId:
-                                                                                    auction.highest_bidder_id,
-                                                                                winnerPlayerName,
-                                                                                winningBid: Number(
-                                                                                    auction.highest_bid
-                                                                                ),
-                                                                                status: 'completed',
-                                                                                turnAdvanced
-                                                                            });
+                                                                                        turnAdvanced,
+                                                                                        bankruptcy
+                                                                                    });
+                                                                                },
+                                                                                { preserveTurn: true }
+                                                                            );
                                                                         });
                                                                     }
                                                                 );

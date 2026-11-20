@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Player Stats - Onlineopoly</title>
+    <style>
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+            background: #c2eccd;
+            color: #222;
+            font-family: Arial, sans-serif;
+        }
+
+        main {
+            width: min(100%, 520px);
+            padding: 24px;
+            box-sizing: border-box;
+            background: #fffdf3;
+            border: 2px solid #222;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #222;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+       #stats-player {
+            margin: 16px 0 22px;
+            color: #101110;
+            font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+            font-size: clamp(1.4rem, 4vw, 2rem);
+            font-weight: bold;
+            letter-spacing: 0.02em;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        #stats-list {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            margin: 20px 0;
+        }
+
+        #stats-list dt,
+        #stats-list dd {
+            margin: 0;
+            padding: 10px 6px;
+            border-bottom: 1px solid #bbb;
+        }
+
+        #stats-list dd {
+            font-weight: bold;
+            text-align: right;
+        }
+
+        #back-to-menu {
+            width: 100%;
+            padding: 11px;
+            border: 0;
+            border-radius: 5px;
+            background: #e52521;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #back-to-menu:hover {
+            background: #bd1c19;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1 id="stats-title">Player Stats</h1>
+        <p id="stats-player">Loading player stats...</p>
+        <dl id="stats-list"></dl>
+        <button id="back-to-menu" type="button">Back to Menu</button>
+    </main>
+    <script>
+        async function loadStats() {
+            const statsPlayer = document.getElementById('stats-player');
+            const statsList = document.getElementById('stats-list');
+
+            try {
+                const response = await fetch('/games/my-stats');
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Could not load stats.');
+                }
+
+                const stats = result.stats;
+                const piece = stats.most_picked_piece
+                    ? stats.most_picked_piece
+                        .replaceAll('_', ' ')
+                        .replace(/\b\w/g, letter => letter.toUpperCase())
+                    : 'None yet';
+
+                statsPlayer.textContent =
+                    `${result.playerName}`;
+
+                const rows = [
+                    ['Games played', stats.games_played],
+                    ['Games won', stats.games_won],
+                    ['Most picked piece', piece],
+                    [
+                        'Total money earned',
+                        `$${Number(stats.total_money_earned || 0).toLocaleString(
+                            'en-US',
+                            { maximumFractionDigits: 0 }
+                        )}`
+                    ],
+                    ['Houses bought', stats.houses_bought],
+                    ['Hotels bought', stats.hotels_bought],
+                    ['Times sent to Jail', stats.times_jailed]
+                ];
+
+                statsList.replaceChildren();
+
+                rows.forEach(([label, value]) => {
+                    const term = document.createElement('dt');
+                    const description = document.createElement('dd');
+
+                    term.textContent = label;
+                    description.textContent = String(value ?? 0);
+                    statsList.append(term, description);
+                });
+            } catch (error) {
+                statsPlayer.textContent = error.message;
+            }
+        }
+
+        loadStats();
+
+        document.getElementById('back-to-menu')
+            .addEventListener('click', () => {
+                window.location.href = '/menu';
+            });
+    </script>
+
+</body>
+</html>
+

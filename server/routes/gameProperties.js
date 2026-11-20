@@ -88,6 +88,23 @@ if (req.method === 'POST' && route === '/games/buy-property') {
                             return;
                         }
 
+                        if (property.bankruptcy) {
+                            if (io) {
+                                io.to(`game:${gameId}`).emit('playerBankrupt', {
+                                    gameId,
+                                    ...property.bankruptcy
+                                });
+                            }
+
+                            sendJson(res, 200, {
+                                message:
+                                    `${property.bankruptcy.playerName} went bankrupt at $0.`,
+                                property,
+                                bankruptcy: property.bankruptcy
+                            });
+                            return;
+                        }
+
                         if (io) {
                             io.to(`game:${gameId}`).emit('propertyPurchased', {
                                 gameId,
@@ -169,6 +186,23 @@ if (req.method === 'POST' && route === '/games/buy-property') {
 
                         sendJson(res, 409, {
                             message: purchaseErr.message
+                        });
+                        return;
+                    }
+
+                    if (building.bankruptcy) {
+                        if (io) {
+                            io.to(`game:${gameId}`).emit('playerBankrupt', {
+                                gameId,
+                                ...building.bankruptcy
+                            });
+                        }
+
+                        sendJson(res, 200, {
+                            message:
+                                `${building.bankruptcy.playerName} went bankrupt at $0.`,
+                            building,
+                            bankruptcy: building.bankruptcy
                         });
                         return;
                     }
@@ -414,6 +448,23 @@ if (req.method === 'POST' && route === '/games/buy-property') {
 
                         sendJson(res, status, {
                             message: unmortgageErr.message
+                        });
+                        return;
+                    }
+
+                    if (result.bankruptcy) {
+                        if (io) {
+                            io.to(`game:${gameId}`).emit('playerBankrupt', {
+                                gameId,
+                                ...result.bankruptcy
+                            });
+                        }
+
+                        sendJson(res, 200, {
+                            message:
+                                `${result.bankruptcy.playerName} went bankrupt at $0.`,
+                            unmortgage: result,
+                            bankruptcy: result.bankruptcy
                         });
                         return;
                     }

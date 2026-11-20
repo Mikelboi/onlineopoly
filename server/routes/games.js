@@ -4,6 +4,7 @@ const handleGameTokenRequest = require('./gameToken');
 const handleGameMovementRequest = require('./gameMovement');
 const handleGameAuctionRequest = require('./gameAuctions');
 const handleGamePropertyRequest = require('./gameProperties');
+const handleGameTradeRequest = require('./gameTrades');
 const { getNextPlayer, handleGameTurnRequest } = require('./gameTurns');
 
 function advanceAuctionTurn(connection, gameId, startingPlayerId, callback) {
@@ -143,6 +144,10 @@ function handleGameRequest(req, res, {
     }
 
     if (handleGamePropertyRequest(req, res, { db, getSession, sendJson, readJsonBody, io })) {
+        return true;
+    }
+
+    if (handleGameTradeRequest(req, res, { db, getSession, sendJson, readJsonBody, io })) {
         return true;
     }
 

@@ -63,6 +63,16 @@
             font-weight: bold;
         }
 
+        #back-to-menu-button {
+            padding: 10px 18px;
+            border: 2px solid #173a24;
+            border-radius: 8px;
+            background: #2e8b57;
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
         #game-controls p {
             margin: 0;
         }
@@ -1018,7 +1028,8 @@
         }
 
         .player-building-toggle,
-        .player-building-action {
+        .player-building-action,
+        .player-trade-button {
             width: 100%;
             padding: 6px;
             border: 1px solid #356b43;
@@ -1028,6 +1039,15 @@
             font-size: 11px;
             font-weight: bold;
             cursor: pointer;
+        }
+
+        .player-trade-button {
+            display: block;
+            margin-top: 8px;
+        }
+
+        .player-trade-button[hidden] {
+            display: none;
         }
 
         .player-building-selection {
@@ -1043,6 +1063,41 @@
             width: 100%;
             padding: 5px;
             font-size: 11px;
+        }
+
+        .trade-offer-card {
+            margin: 10px 0;
+            padding: 12px;
+            border: 1px solid #b8c7b8;
+            border-radius: 8px;
+            background: #f8fbf6;
+        }
+
+        .trade-offer-exchange {
+            display: grid;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        .trade-offer-side {
+            padding: 8px 10px;
+            border-left: 4px solid #356b43;
+            background: #fff;
+        }
+
+        .trade-offer-side h4 {
+            margin: 0 0 5px;
+        }
+
+        .trade-offer-side ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .trade-property-set {
+            color: #526452;
+            font-size: 0.9em;
+            font-weight: 600;
         }
 
         .player-building-message {
@@ -1378,14 +1433,14 @@
 
         .property-building-icon {
             display: block;
-            width: clamp(7px, 0.9vw, 11px);
-            height: clamp(7px, 0.9vw, 11px);
+            width: clamp(9px, 1.1vw, 14px);
+            height: clamp(9px, 1.1vw, 14px);
             flex: 0 0 auto;
         }
 
         .property-building-icon.hotel {
-            width: clamp(10px, 1.25vw, 15px);
-            height: clamp(10px, 1.25vw, 15px);
+            width: clamp(12px, 1.45vw, 18px);
+            height: clamp(12px, 1.45vw, 18px);
         }
 
         .board-space[data-position="10"] .player-tokens {
@@ -1723,7 +1778,24 @@
 
     <div class="game-layout">
 
-    <div class="player-card" id="player-card-1"></div>
+    <div class="player-card" id="player-card-1">
+        <button
+            id="open-trade-dialog-button"
+            class="player-trade-button"
+            type="button"
+            hidden
+        >
+            Trade
+        </button>
+        <button
+            id="open-trade-offers-button"
+            class="player-trade-button"
+            type="button"
+            hidden
+        >
+            Incoming Offers
+        </button>
+    </div>
     <div class="player-card" id="player-card-2"></div>
     <div class="player-card" id="player-card-3"></div>
     <div class="player-card" id="player-card-4"></div>
@@ -1750,6 +1822,9 @@
             <div id="game-controls">
         <p id="current-turn-indicator">Loading turn...</p>
         <p id="diceResult">Roll the dice to move!</p>
+        <button id="back-to-menu-button" type="button" hidden>
+            Back to Menu
+        </button>
         <section id="pending-debts-panel" aria-live="polite" hidden>
             <strong>Pending payments</strong>
             <div id="pending-debts-list"></div>
@@ -1758,6 +1833,46 @@
             Use Get Out of Jail Free Card
         </button>
     </div>
+
+    <dialog id="trade-dialog" aria-labelledby="trade-dialog-title">
+        <h2 id="trade-dialog-title">Propose a Trade</h2>
+
+        <label for="trade-opponent">Trade with:</label>
+        <select id="trade-opponent">
+            <option value="">Choose a player</option>
+        </select>
+
+        <fieldset>
+            <legend>Properties I give</legend>
+            <div id="trade-properties-i-give"></div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Properties I request</legend>
+            <div id="trade-properties-i-request"></div>
+        </fieldset>
+
+        <label for="trade-cash-i-give">Cash I Give:</label>
+        <input id="trade-cash-i-give" type="number" min="0" step="1" value="0">
+
+        <label for="trade-cash-i-request">Cash I Request:</label>
+        <input id="trade-cash-i-request" type="number" min="0" step="1" value="0">
+
+        <p id="trade-message" role="status"></p>
+
+        <button id="send-trade-offer-button" type="button">Send Offer</button>
+        <button id="close-trade-dialog-button" type="button">Close</button>
+    </dialog>
+
+    <dialog id="trade-offers-dialog" aria-labelledby="trade-offers-title">
+        <h2 id="trade-offers-title">Pending Trade Offers</h2>
+        <div id="trade-offers-list"></div>
+        <p id="trade-offers-message" role="status"></p>
+
+        <button id="close-trade-offers-button" type="button">
+            Close
+        </button>
+    </dialog>
 
         <div id="property-purchase-menu" hidden>
             <h2 id="purchase-property-name"></h2>
@@ -1937,6 +2052,7 @@
                 ? `${data.playerName} went bankrupt. ` +
                     `${winner.player_name} wins the game!`
                 : `${data.playerName} went bankrupt. The game is over.`;
+            document.getElementById('back-to-menu-button').hidden = false;
             return;
         }
 
@@ -1952,6 +2068,57 @@
     socket.on('turnChanged', async (data) => {
         if (Number(data.gameId) !== Number(gameId)) return;
         await loadPlayerTokens();
+    });
+
+    socket.on('tradeOfferResponded', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        await loadPlayerTokens();
+
+        const offerButton = Array.from(
+            tradeOffersList.querySelectorAll('button[data-trade-id]')
+        ).find(
+            button => Number(button.dataset.tradeId) === Number(data.tradeId)
+        );
+
+        if (offerButton) {
+            offerButton.closest('article').remove();
+        }
+
+        diceResult.textContent =
+            `A trade offer was ${data.action}.`;
+
+        if (tradeOffersDialog.open) {
+            tradeOffersMessage.textContent =
+                `Trade offer ${data.action}.`;
+
+            if (tradeOffersList.children.length === 0) {
+                tradeOffersMessage.textContent +=
+                    ' There are no pending offers.';
+            }
+        }
+    });
+
+    socket.on('tradeOfferCreated', async data => {
+        if (Number(data.gameId) !== Number(gameId)) {
+            return;
+        }
+
+        if (
+            Number(data.receivingPlayerId) !==
+            Number(currentUserPlayerId)
+        ) {
+            return;
+        }
+
+        diceResult.textContent = 'You received a new trade offer.';
+
+        if (tradeOffersDialog.open) {
+            tradeOffersDialog.close();
+            openTradeOffersButton.click();
+        }
     });
 
     socket.on('tokenUpdated', async (data) => {
@@ -2217,8 +2384,486 @@ socket.on('auctionFinished', async (data) => {
         });
 
         const diceResult = document.getElementById('diceResult');
+        document
+            .getElementById('back-to-menu-button')
+            .addEventListener('click', () => {
+                window.location.href = '/menu';
+            });
         let isRolling = false;
         let rolledDoubles = false;
+
+        const tradeDialog = document.getElementById('trade-dialog');
+        const tradeButton = document.getElementById(
+            'open-trade-dialog-button'
+        );
+
+        document
+            .getElementById('trade-opponent')
+            .addEventListener('change', async event => {
+                const giveList = document.getElementById(
+                    'trade-properties-i-give'
+                );
+                const requestList = document.getElementById(
+                    'trade-properties-i-request'
+                );
+
+                giveList.replaceChildren();
+                requestList.replaceChildren();
+
+                const opponentId = Number(event.target.value);
+
+                if (!opponentId) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(
+                        `/game-room?gameId=${encodeURIComponent(gameId)}`
+                    );
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            data.message || 'Could not load properties.'
+                        );
+                    }
+
+                    const myProperties = data.properties.filter(
+                        property =>
+                            Number(property.player_id) ===
+                            Number(currentUserPlayerId)
+                    );
+                    const opponentProperties = data.properties.filter(
+                        property =>
+                            Number(property.player_id) === opponentId
+                    );
+                    const tradeColorSetNames = {
+                        '#9556a5': 'Purple',
+                        '#75b9e7': 'Light Blue',
+                        '#f49ac1': 'Pink',
+                        '#f79436': 'Orange',
+                        '#ed4545': 'Red',
+                        '#800000': 'Maroon',
+                        '#f5d34d': 'Yellow',
+                        '#1134a6': 'Dark Blue'
+                    };
+                    const getTradePropertySet = property => {
+                        const propertyName = String(
+                            property.property_name || ''
+                        ).trim();
+                        const normalizedName = propertyName.toLowerCase();
+                        const boardSpace =
+                            boardSpaces[Number(property.board_position)] ||
+                            boardSpaces.find(
+                                space =>
+                                    String(space.name).toLowerCase() ===
+                                    normalizedName
+                            );
+
+                        if (isRailroadProperty(property)) {
+                            return 'Railroads';
+                        }
+
+                        if (
+                            normalizedName === 'electric company' ||
+                            normalizedName === 'water works'
+                        ) {
+                            return 'Utilities';
+                        }
+
+                        return tradeColorSetNames[
+                            String(boardSpace?.color || '').toLowerCase()
+                        ] || 'Other';
+                    };
+
+                    const addPropertyOptions = (properties, container) => {
+                        if (properties.length === 0) {
+                            container.textContent =
+                                'No properties available.';
+                            return;
+                        }
+
+                        properties.forEach(property => {
+                            const label = document.createElement('label');
+                            const checkbox =
+                                document.createElement('input');
+
+                            checkbox.type = 'checkbox';
+                            checkbox.value = property.property_id;
+                            checkbox.dataset.giverPlayerId =
+                                property.player_id;
+
+                            const setLabel = document.createElement('span');
+                            setLabel.className = 'trade-property-set';
+                            setLabel.textContent =
+                                `(${getTradePropertySet(property)})`;
+
+                            label.append(
+                                checkbox,
+                                document.createTextNode(
+                                    ` ${property.property_name} `
+                                ),
+                                setLabel
+                            );
+                            container.append(
+                                label,
+                                document.createElement('br')
+                            );
+                        });
+                    };
+
+                    addPropertyOptions(myProperties, giveList);
+                    addPropertyOptions(opponentProperties, requestList);
+                } catch (error) {
+                    document.getElementById('trade-message').textContent =
+                        error.message;
+                }
+            });
+
+        document
+            .getElementById('send-trade-offer-button')
+            .addEventListener('click', async () => {
+                const tradeMessage =
+                    document.getElementById('trade-message');
+                const opponentId = Number(
+                    document.getElementById('trade-opponent').value
+                );
+                const offeringCash = Number(
+                    document.getElementById('trade-cash-i-give').value
+                );
+                const receivingCash = Number(
+                    document.getElementById('trade-cash-i-request').value
+                );
+
+                if (!opponentId) {
+                    tradeMessage.textContent =
+                        'Choose a player to trade with.';
+                    return;
+                }
+
+                if (
+                    !Number.isSafeInteger(offeringCash) ||
+                    offeringCash < 0 ||
+                    !Number.isSafeInteger(receivingCash) ||
+                    receivingCash < 0
+                ) {
+                    tradeMessage.textContent =
+                        'Enter valid whole dollar amounts.';
+                    return;
+                }
+
+                const properties = [
+                    ...document.querySelectorAll(
+                        '#trade-properties-i-give input:checked, ' +
+                        '#trade-properties-i-request input:checked'
+                    )
+                ].map(checkbox => ({
+                    propertyId: Number(checkbox.value),
+                    giverPlayerId: Number(
+                        checkbox.dataset.giverPlayerId
+                    )
+                }));
+
+                const sendOfferButton = document.getElementById(
+                    'send-trade-offer-button'
+                );
+                sendOfferButton.disabled = true;
+                tradeMessage.textContent = '';
+
+                try {
+                    const response = await fetch('/games/trades/create', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            gameId: Number(gameId),
+                            receivingPlayerId: opponentId,
+                            offeringCash,
+                            receivingCash,
+                            properties
+                        })
+                    });
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            result.message || 'Could not send trade offer.'
+                        );
+                    }
+
+                    tradeMessage.textContent = 'Trade offer sent.';
+                } catch (error) {
+                    tradeMessage.textContent = error.message;
+                } finally {
+                    sendOfferButton.disabled = false;
+                }
+            });
+
+            const tradeOffersDialog =
+                document.getElementById('trade-offers-dialog');
+            const openTradeOffersButton =
+                document.getElementById('open-trade-offers-button');
+            const closeTradeOffersButton =
+                document.getElementById('close-trade-offers-button');
+            const tradeOffersList =
+                document.getElementById('trade-offers-list');
+            const tradeOffersMessage =
+                document.getElementById('trade-offers-message');
+
+            tradeOffersList.addEventListener('click', async event => {
+                const responseButton = event.target.closest(
+                    'button[data-trade-action]'
+                );
+
+                if (!responseButton) {
+                    return;
+                }
+
+                const tradeId = Number(responseButton.dataset.tradeId);
+                const action = responseButton.dataset.tradeAction;
+
+                responseButton.disabled = true;
+                tradeOffersMessage.textContent =
+                    action === 'accept'
+                        ? 'Accepting trade offer...'
+                        : 'Rejecting trade offer...';
+
+                try {
+                    const response = await fetch('/games/trades/respond', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            gameId: Number(gameId),
+                            tradeId,
+                            action
+                        })
+                    });
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            result.message ||
+                                'Could not respond to the trade offer.'
+                        );
+                    }
+
+                    responseButton.closest('article').remove();
+
+                    if (action === 'accept') {
+                        await loadPlayerTokens();
+                    }
+
+                    tradeOffersMessage.textContent = result.message;
+
+                    if (tradeOffersList.children.length === 0) {
+                        tradeOffersMessage.textContent +=
+                            ' There are no pending offers.';
+                    }
+                } catch (error) {
+                    tradeOffersMessage.textContent = error.message;
+                    responseButton.disabled = false;
+                }
+            });
+
+            openTradeOffersButton.addEventListener('click', async () => {
+                tradeOffersList.replaceChildren();
+                tradeOffersMessage.textContent = 'Loading offers...';
+                tradeOffersDialog.showModal();
+
+                try {
+                    const response = await fetch(
+                        `/games/trades/pending?gameId=${encodeURIComponent(gameId)}`
+                    );
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            result.message || 'Could not load trade offers.'
+                        );
+                    }
+
+                    tradeOffersList.replaceChildren();
+
+                    if (result.offers.length === 0) {
+                        tradeOffersMessage.textContent =
+                            'There are no pending offers.';
+                        return;
+                    }
+
+                    tradeOffersMessage.textContent = '';
+
+                    result.offers.forEach(offer => {
+                        const offerCard = document.createElement('article');
+                        const heading = document.createElement('h3');
+                        const exchange = document.createElement('div');
+
+                        offerCard.className = 'trade-offer-card';
+                        exchange.className = 'trade-offer-exchange';
+
+                        heading.textContent =
+                            `Offer from ${offer.offeringPlayerName}`;
+
+                        const appendOfferSide = (
+                            title,
+                            cashAmount,
+                            properties
+                        ) => {
+                            const side = document.createElement('section');
+                            const sideTitle = document.createElement('h4');
+                            const itemList = document.createElement('ul');
+                            const propertyNames = properties.map(
+                                property => property.propertyName
+                            );
+
+                            side.className = 'trade-offer-side';
+                            sideTitle.textContent = title;
+
+                            if (Number(cashAmount) > 0) {
+                                const cashItem = document.createElement('li');
+                                cashItem.textContent =
+                                    `$${Number(cashAmount).toLocaleString('en-US')} cash`;
+                                itemList.append(cashItem);
+                            }
+
+                            propertyNames.forEach(propertyName => {
+                                const propertyItem =
+                                    document.createElement('li');
+                                propertyItem.textContent = propertyName;
+                                itemList.append(propertyItem);
+                            });
+
+                            if (itemList.children.length === 0) {
+                                const emptyItem =
+                                    document.createElement('li');
+                                emptyItem.textContent =
+                                    'No cash or properties.';
+                                itemList.append(emptyItem);
+                            }
+
+                            side.append(sideTitle, itemList);
+                            exchange.append(side);
+                        };
+
+                        const theyOfferProperties = offer.properties.filter(
+                            property =>
+                                Number(property.giverPlayerId) ===
+                                Number(offer.offeringPlayerId)
+                        );
+                        const theyReceiveProperties =
+                            offer.properties.filter(
+                                property =>
+                                    Number(property.giverPlayerId) ===
+                                    Number(currentUserPlayerId)
+                            );
+
+                        appendOfferSide(
+                            'They offer',
+                            offer.offeringCash,
+                            theyOfferProperties
+                        );
+                        appendOfferSide(
+                            'They would receive',
+                            offer.receivingCash,
+                            theyReceiveProperties
+                        );
+
+                        offerCard.append(heading, exchange);
+
+                        const actions = document.createElement('div');
+                        const acceptButton =
+                            document.createElement('button');
+                        const rejectButton =
+                            document.createElement('button');
+
+                        acceptButton.type = 'button';
+                        acceptButton.textContent = 'Accept';
+                        acceptButton.dataset.tradeAction = 'accept';
+                        acceptButton.dataset.tradeId = offer.tradeId;
+
+                        rejectButton.type = 'button';
+                        rejectButton.textContent = 'Reject';
+                        rejectButton.dataset.tradeAction = 'reject';
+                        rejectButton.dataset.tradeId = offer.tradeId;
+
+                        actions.append(acceptButton, rejectButton);
+                        offerCard.append(actions);
+
+                        tradeOffersList.append(offerCard);
+                    });
+                } catch (error) {
+                    tradeOffersMessage.textContent = error.message;
+                }
+            });
+
+            closeTradeOffersButton.addEventListener('click', event => {
+                event.stopPropagation();
+                tradeOffersDialog.close();
+            });
+        const closeTradeDialogButton = document.getElementById(
+            'close-trade-dialog-button'
+        );
+
+        tradeButton.addEventListener('click', async () => {
+            const tradeOpponentSelect =
+                document.getElementById('trade-opponent');
+
+            tradeOpponentSelect.value = '';
+            document
+                .getElementById('trade-properties-i-give')
+                .replaceChildren();
+            document
+                .getElementById('trade-properties-i-request')
+                .replaceChildren();
+            document.getElementById('trade-cash-i-give').value = '0';
+            document.getElementById('trade-cash-i-request').value = '0';
+            document.getElementById('trade-message').textContent = '';
+            document.getElementById(
+                'send-trade-offer-button'
+            ).disabled = false;
+            try {
+                const response = await fetch(
+                    `/game-room?gameId=${encodeURIComponent(gameId)}`
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.message || 'Could not load players.');
+                }
+
+                const opponentSelect =
+                    document.getElementById('trade-opponent');
+                opponentSelect.replaceChildren();
+
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'Choose a player';
+                opponentSelect.append(placeholder);
+
+                data.players
+                    .filter(player =>
+                        Number(player.player_id) !==
+                        Number(currentUserPlayerId)
+                    )
+                    .forEach(player => {
+                        const option = document.createElement('option');
+                        option.value = player.player_id;
+                        option.textContent = player.player_name;
+                        opponentSelect.append(option);
+                    });
+
+                tradeDialog.showModal();
+            } catch (error) {
+                diceResult.textContent = error.message;
+            }
+        });
+
+        closeTradeDialogButton.addEventListener('click', event => {
+            event.stopPropagation();
+            tradeDialog.close();
+        });
 
         socket.on('pendingDebtPaid', async data => {
             if (Number(data.gameId) !== Number(gameId)) {
@@ -2596,16 +3241,18 @@ socket.on('auctionFinished', async (data) => {
         });
 
         async function rollDice() {
-        if (isRolling) return;
+            if (isRolling) return;
 
-        if (
-            !propertyPurchaseMenu.hidden ||
-            !document.getElementById('rent-popup').hidden
-        ) {
-            return;
-        }
+            if (
+                tradeDialog.open ||
+                tradeOffersDialog.open ||
+                !propertyPurchaseMenu.hidden ||
+                !document.getElementById('rent-popup').hidden
+            ) {
+                return;
+            }
 
-        isRolling = true;
+            isRolling = true;
             diceResult.textContent = 'Rolling dice...';
 
 
@@ -2658,6 +3305,10 @@ socket.on('auctionFinished', async (data) => {
 
         const gameData = await loadPlayerTokens();
 
+        if (data.bankruptcy) {
+            return;
+        }
+
         if (gameData) {
             if (data.rent && data.rent.rentPaid) {
                 showRentPopup(data.rent);
@@ -2704,6 +3355,10 @@ async function endTurn() {
 }
 
    document.getElementById('game-board').addEventListener('click', (event) => {
+    if (tradeDialog.open || tradeOffersDialog.open) {
+        return;
+    }
+
     if (activeAuctionId !== null) {
         diceResult.textContent = 'You cannot roll while an auction is active.';
         return;
@@ -3628,7 +4283,8 @@ placeBidButton.addEventListener('click', async () => {
             players,
             ownedPropertyRows = [],
             currentUserPlayerId = null,
-            currentPlayerId = null
+            currentPlayerId = null,
+            canTrade = false
         ) {
             const playerCards = [
                 document.getElementById('player-card-1'),
@@ -3837,9 +4493,10 @@ placeBidButton.addEventListener('click', async () => {
                 const isCurrentUserTurn =
                     Number(player.player_id) === Number(currentUserPlayerId) &&
                     Number(player.player_id) === Number(currentPlayerId);
+                let buildingControls = null;
 
                 if (isCurrentUserTurn && completeColorGroups.length > 0) {
-                    const buildingControls = document.createElement('section');
+                    buildingControls = document.createElement('section');
                     buildingControls.className = 'player-building-controls';
 
                     const buildingToggle = document.createElement('button');
@@ -3972,6 +4629,21 @@ placeBidButton.addEventListener('click', async () => {
                         buildingMessage
                     );
                     buildingControls.append(buildingToggle, buildingSelection);
+                }
+
+                if (
+                    Number(player.player_id) ===
+                    Number(currentUserPlayerId)
+                ) {
+                    if (canTrade) {
+                        card.append(tradeButton);
+                    }
+
+                    openTradeOffersButton.hidden = false;
+                    card.append(openTradeOffersButton);
+                }
+
+                if (buildingControls) {
                     card.append(buildingControls);
                 }
 
@@ -4025,6 +4697,20 @@ placeBidButton.addEventListener('click', async () => {
                     Number(myPlayer.player_id) === Number(currentPlayerId)
                 );
 
+                const ownsAProperty = (data.properties || []).some(
+                    property =>
+                        myPlayer &&
+                        Number(property.player_id) ===
+                            Number(myPlayer.player_id)
+                );
+
+                const canTrade = Boolean(
+                    isCurrentUserTurn &&
+                    Number(data.game.turn_has_rolled) === 0 &&
+                    ownsAProperty
+                );
+                tradeButton.hidden = !canTrade;
+
                 renderPendingDebts(
                     data.pendingDebts || [],
                     myPlayer
@@ -4034,7 +4720,8 @@ placeBidButton.addEventListener('click', async () => {
                     data.players,
                     data.properties || [],
                     currentUserPlayerId,
-                    currentPlayerId
+                    currentPlayerId,
+                    canTrade
                 );
 
                 if (propertyCardDialog.open && displayedPropertyCard) {

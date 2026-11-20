@@ -1,6 +1,103 @@
 function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBody, io }) {
     const route = req.url.split('?')[0];
 
+    if (req.method === 'GET' && route === '/games/my-stats') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, {
+                message: 'Please log in to view your player stats.'
+            });
+            return true;
+        }
+
+        const userId = Number(session.userId);
+
+        db.query(
+            `SELECT
+                 (
+                     SELECT COUNT(*)
+                     FROM Player AS p
+                     JOIN Game AS g ON g.game_id = p.game_id
+                     WHERE p.user_id = ?
+                       AND g.gamestarted_at IS NOT NULL
+                 ) AS games_played,
+                 (
+                     SELECT COUNT(*)
+                     FROM Player AS p
+                     JOIN Game AS g ON g.game_id = p.game_id
+                     WHERE p.user_id = ?
+                       AND g.game_status = 'completed'
+                       AND g.current_player_id = p.player_id
+                 ) AS games_won,
+                 (
+                     SELECT p.token_type
+                     FROM Player AS p
+                     JOIN Game AS g ON g.game_id = p.game_id
+                     WHERE p.user_id = ?
+                       AND g.gamestarted_at IS NOT NULL
+                       AND p.token_type IS NOT NULL
+                     GROUP BY p.token_type
+                     ORDER BY COUNT(*) DESC, p.token_type ASC
+                     LIMIT 1
+                 ) AS most_picked_piece,
+                 (
+                     SELECT COALESCE(SUM(gt.amount), 0)
+                     FROM Game_Transaction AS gt
+                     JOIN Player AS p ON p.player_id = gt.player_id
+                     WHERE p.user_id = ?
+                       AND gt.game_id = p.game_id
+                       AND gt.amount > 0
+                 ) AS total_money_earned,
+                 (
+                     SELECT COUNT(*)
+                     FROM Game_Transaction AS gt
+                     JOIN Player AS p ON p.player_id = gt.player_id
+                     WHERE p.user_id = ?
+                       AND gt.game_id = p.game_id
+                       AND gt.transaction_type = 'House Purchase'
+                 ) AS houses_bought,
+                 (
+                     SELECT COUNT(*)
+                     FROM Game_Transaction AS gt
+                     JOIN Player AS p ON p.player_id = gt.player_id
+                     WHERE p.user_id = ?
+                       AND gt.game_id = p.game_id
+                       AND gt.transaction_type = 'Hotel Purchase'
+                 ) AS hotels_bought,
+                 (
+                     SELECT COALESCE(SUM(p.times_jailed), 0)
+                     FROM Player AS p
+                     WHERE p.user_id = ?
+                 ) AS times_jailed`,
+            [userId, userId, userId, userId, userId, userId, userId],
+            (statsErr, rows) => {
+                if (statsErr) {
+                    console.error('Load player stats error:', statsErr);
+                    sendJson(res, 500, {
+                        message: 'Could not load your player stats.'
+                    });
+                    return;
+                }
+
+                sendJson(res, 200, {
+                    playerName: session.username,
+                    stats: rows[0] || {
+                        games_played: 0,
+                        games_won: 0,
+                        most_picked_piece: null,
+                        total_money_earned: 0,
+                        houses_bought: 0,
+                        hotels_bought: 0,
+                        times_jailed: 0
+                    }
+                });
+            }
+        );
+
+        return true;
+    }
+
     // CREATE GAME
     if (req.method === 'POST' && route === '/games/create') {
         const session = getSession(req);
@@ -447,7 +544,7 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
         }
 
         db.query(
-            `SELECT game_id, game_status, player_count, host_user_id, current_player_id
+            `SELECT game_id, game_status, player_count, host_user_id, current_player_id, turn_has_rolled
              FROM Game
              WHERE game_id = ?`,
             [gameId],

@@ -152,7 +152,8 @@ function handleGameTurnRequest(req, res, { db, getSession, sendJson, readJsonBod
     
                                     db.query(
                                         `UPDATE Game
-                                         SET current_player_id = ?
+                                         SET current_player_id = ?,
+                                             turn_has_rolled = 0
                                          WHERE game_id = ?
                                            AND current_player_id = ?`,
                                         [nextPlayerId, gameId, currentPlayerId],

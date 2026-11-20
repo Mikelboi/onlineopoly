@@ -34,6 +34,31 @@ const playerTwoTestPropertyNames = {
     3: 'Circus Circle'
 };
 
+function emitPlayerBankrupt(io, gameId, bankruptcy) {
+    if (!io || !bankruptcy) return;
+
+    io.to(`game:${gameId}`).emit('playerBankrupt', {
+        gameId,
+        ...bankruptcy
+    });
+}
+
+function sendZeroBalanceBankruptcy(
+    io,
+    res,
+    sendJson,
+    gameId,
+    bankruptcy,
+    responseData
+) {
+    emitPlayerBankrupt(io, gameId, bankruptcy);
+    sendJson(res, 200, {
+        ...responseData,
+        message: `${bankruptcy.playerName} went bankrupt at $0.`,
+        bankruptcy
+    });
+}
+
 function rollForPlayer(gameId, player) {
     if (Number(player.player_id) !== Number(player.first_player_id)) {
         return rollDice();
@@ -206,6 +231,10 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                         return;
                     }
 
+                if (payment.bankruptcy) {
+                    emitPlayerBankrupt(io, gameId, payment.bankruptcy);
+                }
+
                     if (io) {
                         io.to(`game:${gameId}`).emit('pendingDebtPaid', {
                             gameId,
@@ -214,8 +243,9 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                     }
 
                     sendJson(res, 200, {
-                        message:
-                            `Paid $${payment.amountDue} for ${payment.debtSource}.`,
+                    message: payment.bankruptcy
+                        ? `${payment.debtorName} went bankrupt at $0.`
+                        : `Paid $${payment.amountDue} for ${payment.debtSource}.`,
                         payment
                     });
                 }
@@ -528,17 +558,22 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                             jailBailRequired = true;
                                         } else {
                                             db.query(
-                                                `UPDATE Player
-                                                 SET jail_turns = jail_turns + 1
-                                                 WHERE player_id = ?
-                                                   AND game_id = ?
-                                                   AND is_in_jail = 1
-                                                   AND is_bankrupt = 0`,
+                                                `UPDATE Player AS p
+                                                 JOIN Game AS g
+                                                   ON g.game_id = p.game_id
+                                                 SET p.jail_turns = p.jail_turns + 1,
+                                                     g.turn_has_rolled = 1
+                                                 WHERE p.player_id = ?
+                                                   AND p.game_id = ?
+                                                   AND p.is_in_jail = 1
+                                                   AND p.is_bankrupt = 0
+                                                   AND g.current_player_id = p.player_id
+                                                   AND g.game_status = 'in_progress'`,
                                                 [player.player_id, gameId],
                                                 (jailErr, result) => {
                                                     if (
                                                         jailErr ||
-                                                        result.affectedRows !== 1
+                                                        result.affectedRows < 1
                                                     ) {
                                                         console.error(
                                                             'Update Jail turn error:',
@@ -684,22 +719,30 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                             }
 
                             const updatePlayerPosition = () => db.query(
-                                `UPDATE Player
-                                 SET position = ?,
-                                     consecutive_doubles = ?,
-                                     is_in_jail = CASE
+                                `UPDATE Player AS p
+                                 JOIN Game AS g
+                                   ON g.game_id = p.game_id
+                                 SET p.position = ?,
+                                     p.consecutive_doubles = ?,
+                                     p.times_jailed = p.times_jailed + ?,
+                                     p.is_in_jail = CASE
                                          WHEN ? = 1 THEN 1
                                          WHEN ? = 1 THEN 0
-                                         ELSE is_in_jail
+                                         ELSE p.is_in_jail
                                      END,
-                                     jail_turns = CASE
+                                     p.jail_turns = CASE
                                          WHEN ? = 1 OR ? = 1 THEN 0
-                                         ELSE jail_turns
-                                     END
-                                 WHERE player_id = ? AND game_id = ?`,
+                                         ELSE p.jail_turns
+                                     END,
+                                     g.turn_has_rolled = 1
+                                 WHERE p.player_id = ?
+                                   AND p.game_id = ?
+                                   AND g.current_player_id = p.player_id
+                                   AND g.game_status = 'in_progress'`,
                                 [
                                     newPosition,
                                     consecutiveDoubles,
+                                    sendToJail ? 1 : 0,
                                     sendToJail ? 1 : 0,
                                     releaseFromJail ? 1 : 0,
                                     sendToJail ? 1 : 0,
@@ -748,6 +791,28 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                             Number(session.userId),
                                             Number(gameId),
                                             (rentErr, rentResult) => {
+                                                if (
+                                                    !rentErr &&
+                                                    rentResult?.bankruptcy
+                                                ) {
+                                                    emitPlayerBankrupt(
+                                                        io,
+                                                        gameId,
+                                                        rentResult.bankruptcy
+                                                    );
+                                                    sendJson(res, 200, {
+                                                        message:
+                                                            `${rentResult.bankruptcy.playerName} went bankrupt at $0.`,
+                                                        dice,
+                                                        oldPosition,
+                                                        newPosition,
+                                                        passedGo,
+                                                        bankruptcy:
+                                                            rentResult.bankruptcy
+                                                    });
+                                                    return;
+                                                }
+
                                                 if (rentErr) {
                                                     if (
                                                         rentErr.message ===
@@ -1002,7 +1067,27 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                     Number(gameId),
                                                     -taxSpace.amount,
                                                     taxSpace.name,
-                                                    (taxErr) => {
+                                                    (taxErr, moneyResult) => {
+                                                        if (
+                                                            !taxErr &&
+                                                            moneyResult?.bankruptcy
+                                                        ) {
+                                                            sendZeroBalanceBankruptcy(
+                                                                io,
+                                                                res,
+                                                                sendJson,
+                                                                gameId,
+                                                                moneyResult.bankruptcy,
+                                                                {
+                                                                    dice,
+                                                                    oldPosition,
+                                                                    newPosition,
+                                                                    passedGo
+                                                                }
+                                                            );
+                                                            return;
+                                                        }
+
                                                         if (taxErr) {
                                                             if (
                                                                 taxErr.message ===
@@ -1337,7 +1422,29 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                                         Number(gameId),
                                                         -repairCost,
                                                         `${cardDeckName} Repairs`,
-                                                        repairMoneyErr => {
+                                                        (repairMoneyErr, moneyResult) => {
+                                                            if (
+                                                                !repairMoneyErr &&
+                                                                moneyResult?.bankruptcy
+                                                            ) {
+                                                                sendZeroBalanceBankruptcy(
+                                                                    io,
+                                                                    res,
+                                                                    sendJson,
+                                                                    gameId,
+                                                                    moneyResult.bankruptcy,
+                                                                    {
+                                                                        dice,
+                                                                        oldPosition,
+                                                                        newPosition,
+                                                                        passedGo,
+                                                                        chanceCard,
+                                                                        cardDeckName
+                                                                    }
+                                                                );
+                                                                return;
+                                                            }
+
                                                             if (repairMoneyErr) {
                                                                 if (
                                                                     repairMoneyErr.message ===
@@ -1466,7 +1573,29 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                             Number(gameId),
                                             amount,
                                             `${cardDeckName} Card`,
-                                            chanceErr => {
+                                            (chanceErr, moneyResult) => {
+                                                if (
+                                                    !chanceErr &&
+                                                    moneyResult?.bankruptcy
+                                                ) {
+                                                    sendZeroBalanceBankruptcy(
+                                                        io,
+                                                        res,
+                                                        sendJson,
+                                                        gameId,
+                                                        moneyResult.bankruptcy,
+                                                        {
+                                                            dice,
+                                                            oldPosition,
+                                                            newPosition,
+                                                            passedGo,
+                                                            chanceCard,
+                                                            cardDeckName
+                                                        }
+                                                    );
+                                                    return;
+                                                }
+
                                                 if (chanceErr) {
                                                     if (
                                                         chanceCard.type === 'pay' &&
@@ -1604,7 +1733,27 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                     Number(gameId),
                                     -50,
                                     'Jail Bail',
-                                    bailErr => {
+                                    (bailErr, moneyResult) => {
+                                        if (
+                                            !bailErr &&
+                                            moneyResult?.bankruptcy
+                                        ) {
+                                            sendZeroBalanceBankruptcy(
+                                                io,
+                                                res,
+                                                sendJson,
+                                                gameId,
+                                                moneyResult.bankruptcy,
+                                                {
+                                                    dice,
+                                                    oldPosition,
+                                                    newPosition,
+                                                    passedGo
+                                                }
+                                            );
+                                            return;
+                                        }
+
                                         if (bailErr) {
                                             if (
                                                 bailErr.message ===

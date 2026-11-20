@@ -1,3 +1,5 @@
+const { declareBankruptcyAtZero } = require('./bankrupt');
+
 const PROPERTY_RENT_SCHEDULES = {
     'dragon drive': [2, 4, 10, 30, 90, 160, 250],
     'circus circle': [4, 8, 20, 60, 180, 320, 450],
@@ -212,12 +214,30 @@ function purchaseProperty(db, userId, gameId, callback) {
                                                                 finished = true;
                                                                 connection.release();
 
-                                                                callback(null, {
+                                                                const purchaseResult = {
                                                                     propertyId: property.property_id,
                                                                     propertyName: property.property_name,
                                                                     price,
                                                                     playerName: player.player_name
-                                                                });
+                                                                };
+
+                                                                declareBankruptcyAtZero(
+                                                                    db,
+                                                                    Number(gameId),
+                                                                    Number(player.player_id),
+                                                                    null,
+                                                                    (bankruptcyErr, bankruptcy) => {
+                                                                        if (bankruptcyErr) {
+                                                                            callback(bankruptcyErr);
+                                                                            return;
+                                                                        }
+
+                                                                        callback(null, {
+                                                                            ...purchaseResult,
+                                                                            bankruptcy
+                                                                        });
+                                                                    }
+                                                                );
                                                             });
                                                         }
                                                     );
@@ -577,14 +597,32 @@ function purchaseBuilding(db, userId, gameId, propertyId, buildingType, callback
 
                                                                     finished = true;
                                                                     connection.release();
-                                                                    callback(null, {
+                                                                    const buildingResult = {
                                                                         propertyId:
                                                                             property.property_id,
                                                                         propertyName:
                                                                             property.property_name,
                                                                         buildingType,
                                                                         cost: buildingCost
-                                                                    });
+                                                                    };
+
+                                                                    declareBankruptcyAtZero(
+                                                                        db,
+                                                                        Number(gameId),
+                                                                        Number(player.player_id),
+                                                                        null,
+                                                                        (bankruptcyErr, bankruptcy) => {
+                                                                            if (bankruptcyErr) {
+                                                                                callback(bankruptcyErr);
+                                                                                return;
+                                                                            }
+
+                                                                            callback(null, {
+                                                                                ...buildingResult,
+                                                                                bankruptcy
+                                                                            });
+                                                                        }
+                                                                    );
                                                                 }
                                                             );
                                                         }
@@ -1353,7 +1391,7 @@ function unmortgageProperty(db, userId, gameId, propertyId, callback) {
 
                                                         finished = true;
                                                         connection.release();
-                                                        callback(null, {
+                                                        const unmortgageResult = {
                                                             propertyId:
                                                                 property.property_id,
                                                             propertyName:
@@ -1361,7 +1399,25 @@ function unmortgageProperty(db, userId, gameId, propertyId, callback) {
                                                             repaymentAmount,
                                                             playerName:
                                                                 player.player_name
-                                                        });
+                                                        };
+
+                                                        declareBankruptcyAtZero(
+                                                            db,
+                                                            Number(gameId),
+                                                            Number(player.player_id),
+                                                            null,
+                                                            (bankruptcyErr, bankruptcy) => {
+                                                                if (bankruptcyErr) {
+                                                                    callback(bankruptcyErr);
+                                                                    return;
+                                                                }
+
+                                                                callback(null, {
+                                                                    ...unmortgageResult,
+                                                                    bankruptcy
+                                                                });
+                                                            }
+                                                        );
                                                     });
                                                 }
                                             );
@@ -1743,7 +1799,7 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                                                 finished = true;
                                                                 connection.release();
 
-                                                                callback(null, {
+                                                                const rentResult = {
                                                                     rentPaid: true,
                                                                     propertyId: property.property_id,
                                                                     propertyName: property.property_name,
@@ -1752,7 +1808,25 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                                                     paidTo: owner.player_id,
                                                                     ownerPlayerName: owner.player_name,
                                                                     ownerUsername: owner.username
-                                                                });
+                                                                };
+
+                                                                declareBankruptcyAtZero(
+                                                                    db,
+                                                                    Number(gameId),
+                                                                    Number(player.player_id),
+                                                                    Number(owner.player_id),
+                                                                    (bankruptcyErr, bankruptcy) => {
+                                                                        if (bankruptcyErr) {
+                                                                            callback(bankruptcyErr);
+                                                                            return;
+                                                                        }
+
+                                                                        callback(null, {
+                                                                            ...rentResult,
+                                                                            bankruptcy
+                                                                        });
+                                                                    }
+                                                                );
                                                             });
                                                         }
                                                     );

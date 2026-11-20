@@ -1,3 +1,5 @@
+const { declareBankruptcyAtZero } = require('./bankrupt');
+
 function updatePlayerMoney(db, playerId, gameId, amount, transactionType, callback) {
     if (!Number.isSafeInteger(playerId) || playerId <= 0) {
         callback(new Error('Invalid player ID.'));
@@ -80,17 +82,51 @@ function updatePlayerMoney(db, playerId, gameId, amount, transactionType, callba
                                 return;
                             }
 
-                            connection.commit(commitErr => {
-                                if (commitErr) {
-                                    failTransaction(commitErr);
-                                    return;
-                                }
+                            connection.query(
+                                `SELECT money
+                                 FROM Player
+                                 WHERE player_id = ? AND game_id = ?`,
+                                [playerId, gameId],
+                                (balanceErr, balances) => {
+                                    if (balanceErr) {
+                                        failTransaction(balanceErr);
+                                        return;
+                                    }
 
-                                if (finished) return;
-                                finished = true;
-                                connection.release();
-                                callback(null);
-                            });
+                                    connection.commit(commitErr => {
+                                        if (commitErr) {
+                                            failTransaction(commitErr);
+                                            return;
+                                        }
+
+                                        if (finished) return;
+                                        finished = true;
+                                        connection.release();
+
+                                        if (
+                                            amount < 0 &&
+                                            balances.length > 0 &&
+                                            Number(balances[0].money) === 0
+                                        ) {
+                                            declareBankruptcyAtZero(
+                                                db,
+                                                gameId,
+                                                playerId,
+                                                null,
+                                                (bankruptcyErr, bankruptcy) => {
+                                                    callback(
+                                                        bankruptcyErr,
+                                                        { bankruptcy }
+                                                    );
+                                                }
+                                            );
+                                            return;
+                                        }
+
+                                        callback(null, null);
+                                    });
+                                }
+                            );
                         }
                     );
                 }

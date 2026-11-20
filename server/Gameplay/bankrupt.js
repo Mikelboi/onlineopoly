@@ -29,17 +29,23 @@ function declareBankruptcy(
         return;
     }
 
-    if (!Number.isSafeInteger(amountOwed) || amountOwed <= 0) {
-        callback(new Error('Invalid debt amount.'));
-        return;
-    }
-
     if (
         !options ||
         typeof options !== 'object' ||
         (options.splitCashAmongPlayers === true && creditorPlayerId !== null)
     ) {
         callback(new Error('Invalid bankruptcy settlement options.'));
+        return;
+    }
+
+    const forceAtZeroBalance = options.forceAtZeroBalance === true;
+
+    if (
+        !Number.isSafeInteger(amountOwed) ||
+        amountOwed < 0 ||
+        (amountOwed === 0 && !forceAtZeroBalance)
+    ) {
+        callback(new Error('Invalid debt amount.'));
         return;
     }
 
@@ -102,6 +108,18 @@ function declareBankruptcy(
                     }
 
                     const player = players[0];
+
+                    if (
+                        forceAtZeroBalance &&
+                        Number(player.money) !== 0
+                    ) {
+                        failTransaction(
+                            new Error(
+                                'The player no longer has a zero balance.'
+                            )
+                        );
+                        return;
+                    }
 
                     if (
                         creditorPlayerId !== null &&
@@ -168,7 +186,10 @@ function declareBankruptcy(
                                         potentialLiquidationValue
                                 );
 
-                                if (shortfallIfAllAssetsSold === 0) {
+                                if (
+                                    !forceAtZeroBalance &&
+                                    shortfallIfAllAssetsSold === 0
+                                ) {
                                     failTransaction(
                                         new Error(
                                             'The player can cover this debt by liquidating assets.'
@@ -267,11 +288,42 @@ function declareBankruptcy(
                                     const gameComplete =
                                         activePlayers.length === 1;
                                     const cashRecipients = [];
+                                    const preserveTurn =
+                                        options.preserveTurn === true;
+                                    const gameRows = await queryInTransaction(
+                                        `SELECT current_player_id
+                                         FROM Game
+                                         WHERE game_id = ?
+                                         FOR UPDATE`,
+                                        [gameId]
+                                    );
+                                    const currentPlayerStillActive =
+                                        gameRows.length > 0 &&
+                                        activePlayers.some(
+                                            activePlayer =>
+                                                Number(activePlayer.player_id) ===
+                                                Number(gameRows[0].current_player_id)
+                                        );
+                                    const playerForTurn =
+                                        preserveTurn && currentPlayerStillActive
+                                            ? activePlayers.find(
+                                                activePlayer =>
+                                                    Number(activePlayer.player_id) ===
+                                                    Number(gameRows[0].current_player_id)
+                                            )
+                                            : nextPlayer;
 
                                     const gameUpdate =
                                         await queryInTransaction(
                                             `UPDATE Game
-                                             SET current_player_id = ?,
+                                             SET turn_has_rolled = CASE
+                                                     WHEN ? = 1 THEN turn_has_rolled
+                                                     ELSE 0
+                                                 END,
+                                                 current_player_id = CASE
+                                                     WHEN ? = 1 THEN current_player_id
+                                                     ELSE ?
+                                                 END,
                                                  game_status = CASE
                                                      WHEN ? = 1 THEN 'completed'
                                                      ELSE game_status
@@ -279,7 +331,9 @@ function declareBankruptcy(
                                              WHERE game_id = ?
                                                AND game_status = 'in_progress'`,
                                             [
-                                                nextPlayer.player_id,
+                                                preserveTurn && currentPlayerStillActive ? 1 : 0,
+                                                preserveTurn && currentPlayerStillActive ? 1 : 0,
+                                                playerForTurn.player_id,
                                                 gameComplete ? 1 : 0,
                                                 gameId
                                             ]
@@ -482,6 +536,54 @@ function declareBankruptcy(
             );
         });
     });
+}
+
+function declareBankruptcyAtZero(
+    db,
+    gameId,
+    playerId,
+    creditorPlayerId,
+    callback,
+    options = {}
+) {
+    db.query(
+        `SELECT money, is_bankrupt
+         FROM Player
+         WHERE player_id = ?
+           AND game_id = ?`,
+        [playerId, gameId],
+        (error, players) => {
+            if (error) {
+                callback(error);
+                return;
+            }
+
+            if (players.length === 0) {
+                callback(new Error('The player was not found in this game.'));
+                return;
+            }
+
+            if (Number(players[0].is_bankrupt) === 1) {
+                callback(null, null);
+                return;
+            }
+
+            if (Number(players[0].money) !== 0) {
+                callback(null, null);
+                return;
+            }
+
+            declareBankruptcy(
+                db,
+                gameId,
+                playerId,
+                creditorPlayerId,
+                0,
+                callback,
+                { ...options, forceAtZeroBalance: true }
+            );
+        }
+    );
 }
 
 function recordPendingDebt(
@@ -710,7 +812,7 @@ function settlePendingDebt(db, gameId, pendingDebtId, userId, callback) {
                             }
 
                             connection.release();
-                            callback(null, {
+                            const payment = {
                                 pendingDebtId,
                                 debtorPlayerId: Number(debt.debtor_player_id),
                                 debtorName: debt.debtor_name,
@@ -724,7 +826,27 @@ function settlePendingDebt(db, gameId, pendingDebtId, userId, callback) {
                                         : debt.creditor_name,
                                 amountDue,
                                 debtSource: debt.debt_source
-                            });
+                            };
+
+                            declareBankruptcyAtZero(
+                                db,
+                                gameId,
+                                Number(debt.debtor_player_id),
+                                debt.creditor_player_id === null
+                                    ? null
+                                    : Number(debt.creditor_player_id),
+                                (bankruptcyErr, bankruptcy) => {
+                                    if (bankruptcyErr) {
+                                        callback(bankruptcyErr);
+                                        return;
+                                    }
+
+                                    callback(null, {
+                                        ...payment,
+                                        bankruptcy
+                                    });
+                                }
+                            );
                         });
                     })().catch(failTransaction);
                 }
@@ -735,6 +857,7 @@ function settlePendingDebt(db, gameId, pendingDebtId, userId, callback) {
 
 module.exports = {
     declareBankruptcy,
+    declareBankruptcyAtZero,
     recordPendingDebt,
     settlePendingDebt
 };

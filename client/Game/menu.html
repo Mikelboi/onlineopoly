@@ -77,6 +77,7 @@
         <button id="log-out">Log Out</button>
 
         <p id="message" role="status"></p>
+        
     </main>
 
     <script>
@@ -107,6 +108,11 @@
         document.getElementById('how-to-play')
             .addEventListener('click', () => {
                 window.open('/rules', '_blank', 'noopener');
+            });
+
+        document.getElementById('Statistics')
+            .addEventListener('click', () => {
+                window.location.href = '/stats';
             });
 
         document.getElementById('log-out')
