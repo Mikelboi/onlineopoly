@@ -53,7 +53,18 @@ function handleGameAuctionRequest(req, res, { db, getSession, sendJson, readJson
                          FROM Player
                          WHERE game_id = ?
                            AND user_id = ?
-                           AND is_bankrupt = 0`,
+                           AND is_bankrupt = 0
+                           AND (
+                               NOT EXISTS (
+                                   SELECT 1 FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                                     AND Game.game_mode = 'local'
+                               )
+                               OR player_id = (
+                                   SELECT current_player_id FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                               )
+                           )`,
                         [gameId, session.userId],
                         (playerErr, players) => {
                             if (playerErr) {
@@ -240,12 +251,26 @@ function handleGameAuctionRequest(req, res, { db, getSession, sendJson, readJson
             }
 
             db.query(
-                `SELECT player_id, player_name, money
+                `SELECT Player.player_id, Player.player_name, Player.money,
+                        Player.is_in_jail
                  FROM Player
-                 WHERE game_id = ?
-                   AND user_id = ?
-                   AND is_bankrupt = 0`,
-                [gameId, session.userId],
+                 JOIN Game ON Game.game_id = Player.game_id
+                 WHERE Player.game_id = ?
+                   AND Player.is_bankrupt = 0
+                   AND (
+                       (Game.game_mode = 'local'
+                        AND Player.user_id = ?
+                        AND Player.player_id = ?)
+                       OR
+                       (Game.game_mode <> 'local'
+                        AND Player.user_id = ?)
+                   )`,
+                [
+                    gameId,
+                    session.userId,
+                    Number(requestData.playerId),
+                    session.userId
+                ],
                 (playerErr, players) => {
                     if (playerErr) {
                         console.error('Auction bidder lookup error:', playerErr);
@@ -263,6 +288,13 @@ function handleGameAuctionRequest(req, res, { db, getSession, sendJson, readJson
                     }
 
                     const player = players[0];
+
+                    if (Number(player.is_in_jail) === 1) {
+                        sendJson(res, 409, {
+                            message: 'Players in Jail cannot participate in auctions.'
+                        });
+                        return;
+                    }
 
                     db.query(
                         `SELECT auction_id, property_id, highest_bid,

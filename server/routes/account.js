@@ -43,6 +43,41 @@ function handleAccountRequest(req, res, dependencies) {
         return true;
     }
 
+    if (req.method === 'POST' && route === '/logout') {
+        const cookie = (req.headers.cookie || '')
+            .split(';')
+            .map(item => item.trim())
+            .find(item => item.startsWith('onlineopoly_session='));
+
+        if (cookie) {
+            let sessionId = cookie.substring('onlineopoly_session='.length);
+            try {
+                sessionId = decodeURIComponent(sessionId);
+            } catch (error) {
+                // A malformed cookie cannot identify a valid session.
+            }
+
+            const session = sessions.get(sessionId);
+            if (session) {
+                sessions.delete(sessionId);
+                if (dependencies.io) {
+                    for (const socket of dependencies.io.sockets.sockets.values()) {
+                        if (socket.data.sessionId === sessionId) {
+                            socket.disconnect(true);
+                        }
+                    }
+                }
+            }
+        }
+
+        sendJson(res, 200, { message: 'You have been logged out.' }, {
+            'Set-Cookie':
+                'onlineopoly_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
+            'Cache-Control': 'no-store'
+        });
+        return true;
+    }
+
     if (req.method === 'GET' && route === '/session') {
         const session = getSession(req, sessions);
 

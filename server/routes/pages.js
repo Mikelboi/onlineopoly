@@ -10,6 +10,7 @@ const tokenSelectionPath = path.join(__dirname, '..', '..', 'client', 'Game', 't
 const menuPath = path.join( __dirname, '..', '..', 'client', 'Game', 'menu.html');
 const rulesPath = path.join(__dirname, '..', '..', 'client', 'Game', 'rules.html');
 const statsPath = path.join(__dirname, '..', '..', 'client', 'Game', 'stats.html');
+const localLobbyPath = path.join(__dirname, '..', '..', 'client', 'Game', 'local-lobby.html');
 
 function servePage(filePath, res) {
     fs.readFile(filePath, (err, data) => {
@@ -95,6 +96,8 @@ function handlePageRequest(req, res) {
         filePath = statsPath;
     } else if (route === '/lobby') {
         filePath = lobbyPath;
+    } else if (route === '/local-lobby') {
+        filePath = localLobbyPath;
     } else if (route === '/room' || route.startsWith('/room/')) {
         filePath = roomPath;
     } else if (route === '/token-selection') {

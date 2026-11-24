@@ -77,6 +77,49 @@
             margin: 0;
         }
 
+        #local-game-actions {
+            position: fixed;
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 132px;
+            max-width: calc(100vw - 16px);
+            padding: 8px;
+            border: 1px solid #356b43;
+            border-radius: 8px;
+            background: #fffdf3;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        #local-game-actions[hidden] {
+            display: none;
+        }
+
+        #local-game-actions button {
+            width: 100%;
+            padding: 6px 9px;
+            border: 0;
+            border-radius: 6px;
+            background: #238636;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #local-game-actions button:last-of-type {
+            background: #e52521;
+        }
+
+        #local-save-message {
+            min-width: 0;
+            font-size: 13px;
+            text-align: center;
+        }
+
         #pending-debts-panel {
             width: min(100%, 360px);
             max-height: 150px;
@@ -1307,6 +1350,10 @@
             box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
         }
 
+        #jail-result-title {
+            text-align: center;
+        }
+
         .chance-card-dialog.community-chest-dialog {
             border-color: #07172b;
             background: #0b1f3a;
@@ -1384,10 +1431,10 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 22px;
+            font-size: 25px;
             line-height: 1;
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid #888;
@@ -1776,6 +1823,12 @@
 </head>
 <body>
 
+    <div id="local-game-actions" hidden>
+        <button type="button" id="save-local-game-button">Save Game</button>
+        <button type="button" id="leave-local-game-button">Leave Game</button>
+        <p id="local-save-message" role="status" aria-live="polite"></p>
+    </div>
+
     <div class="game-layout">
 
     <div class="player-card" id="player-card-1">
@@ -1877,7 +1930,7 @@
         <div id="property-purchase-menu" hidden>
             <h2 id="purchase-property-name"></h2>
             <p id="purchase-property-price"></p>
-            <p>Do you want to purchase this?</p>
+            <p id="purchase-property-prompt">Do you want to purchase this?</p>
 
             <button id="buy-property-button" type="button">
                 Buy
@@ -1890,6 +1943,11 @@
 
             <div id="auction-bidding-section" hidden>
                 <h3>Place Your Bid</h3>
+
+                <label id="auction-bidder-label" for="auction-bidder" hidden>
+                    Player bidding:
+                </label>
+                <select id="auction-bidder" hidden></select>
 
                 <label for="auction-bid-amount">Bid amount:</label>
                 <input
@@ -1982,6 +2040,11 @@
                 </button>
             </div>
         </dialog>
+        <dialog id="jail-result-dialog" aria-labelledby="jail-result-title">
+            <h2 id="jail-result-title">Jail Roll</h2>
+            <p id="jail-result-message"></p>
+            <button id="jail-result-continue" type="button">Continue</button>
+        </dialog>
         </div>
         </section>
 
@@ -1992,7 +2055,125 @@
     <script src="/socket.io/socket.io.js"></script>
 
 <script>
-    const socket = io();
+    const localGameMode =
+        new URLSearchParams(window.location.search).get('mode') === 'local';
+    let localResumeStateRestored = false;
+    let localCurrentPlayerName = '';
+    let lastAnnouncedLocalTurnPlayerId = null;
+
+    function formatLocalActionMessage(message) {
+        if (!localGameMode || !localCurrentPlayerName || !message) {
+            return message;
+        }
+
+        let text = String(message);
+        const sentenceStarts = [
+            [/^you are\b/i, `${localCurrentPlayerName} is`],
+            [/^you have\b/i, `${localCurrentPlayerName} has`],
+            [/^you do not\b/i, `${localCurrentPlayerName} does not`],
+            [/^you cannot\b/i, `${localCurrentPlayerName} cannot`],
+            [/^you can't\b/i, `${localCurrentPlayerName} can't`],
+            [/^you were\b/i, `${localCurrentPlayerName} was`],
+            [/^you\b/i, localCurrentPlayerName]
+        ];
+
+        for (const [pattern, replacement] of sentenceStarts) {
+            if (pattern.test(text)) {
+                return text.replace(pattern, replacement);
+            }
+        }
+
+        if (text.startsWith(`${localCurrentPlayerName}:`)) {
+            return text;
+        }
+
+        return `${localCurrentPlayerName}: ${text}`;
+    }
+    const socket = localGameMode
+        ? {
+            id: null,
+            on() {},
+            emit() {}
+        }
+        : io();
+
+    const localGameActions = document.getElementById('local-game-actions');
+    const saveLocalGameButton = document.getElementById('save-local-game-button');
+    const leaveLocalGameButton = document.getElementById('leave-local-game-button');
+    const localSaveMessage = document.getElementById('local-save-message');
+
+    function positionLocalGameActions() {
+        const playerOneCard = document.getElementById('player-card-1');
+        if (!playerOneCard || localGameActions.hidden) return;
+
+        const cardBounds = playerOneCard.getBoundingClientRect();
+        const toolbarWidth = localGameActions.getBoundingClientRect().width;
+        const playerTwoCard = document.getElementById('player-card-2');
+        const playerTwoLeft = playerTwoCard?.getBoundingClientRect().left ??
+            window.innerWidth;
+        const rightSideLeft = cardBounds.right + 4;
+        const fitsBesideCard =
+            rightSideLeft + toolbarWidth <= playerTwoLeft - 8;
+
+        localGameActions.style.left = `${fitsBesideCard
+            ? rightSideLeft
+            : Math.max(8, cardBounds.left)}px`;
+        localGameActions.style.top = `${fitsBesideCard
+            ? cardBounds.top
+            : cardBounds.bottom + 8}px`;
+    }
+
+    window.addEventListener('resize', positionLocalGameActions);
+
+    async function saveLocalGame(leaveAfterSaving = false) {
+        const buttons = [saveLocalGameButton, leaveLocalGameButton];
+        buttons.forEach(button => { button.disabled = true; });
+        localSaveMessage.textContent = leaveAfterSaving
+            ? 'Leaving game...'
+            : 'Saving game...';
+
+        try {
+            const response = await fetch(
+                leaveAfterSaving ? '/games/local/leave' : '/games/local/save',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gameId: Number(gameId) })
+                }
+            );
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.message || 'Could not save this local game.');
+            }
+
+            if (leaveAfterSaving) {
+                window.location.href = '/local-lobby?left=1';
+                return;
+            }
+
+            localSaveMessage.textContent = result.message;
+        } catch (error) {
+            localSaveMessage.textContent = error.message;
+        } finally {
+            buttons.forEach(button => { button.disabled = false; });
+        }
+    }
+
+    saveLocalGameButton.addEventListener('click', event => {
+        event.stopPropagation();
+        saveLocalGame(false);
+    });
+    leaveLocalGameButton.addEventListener('click', event => {
+        event.stopPropagation();
+        if (window.confirm(
+            'Leave this game? It will only appear in Saved Local Games if you saved it first.'
+        )) {
+            saveLocalGame(true);
+        }
+    });
+    document
+        .getElementById('back-to-menu-button')
+        .addEventListener('click', event => event.stopPropagation());
 
         socket.on('playerMoved', async (move) => {
         if (Number(move.gameId) !== Number(gameId)) {
@@ -2245,6 +2426,19 @@ async function finishAuction() {
 
             // Allow another attempt if the server rejected the request.
             auctionFinishRequested = false;
+        } else if (localGameMode) {
+            if (auctionTimer !== null) {
+                clearInterval(auctionTimer);
+                auctionTimer = null;
+            }
+            auctionBiddingSection.hidden = true;
+            auctionBidder.hidden = true;
+            auctionBidderLabel.hidden = true;
+            auctionBidAmount.value = '';
+            activeAuctionId = null;
+            auctionFinishRequested = false;
+            diceResult.textContent = result.message;
+            await loadPlayerTokens();
         }
     } catch (error) {
         console.error('Finish auction request failed:', error);
@@ -2578,6 +2772,9 @@ socket.on('auctionFinished', async (data) => {
                         },
                         body: JSON.stringify({
                             gameId: Number(gameId),
+                            offeringPlayerId: localGameMode
+                                ? Number(currentUserPlayerId)
+                                : undefined,
                             receivingPlayerId: opponentId,
                             offeringCash,
                             receivingCash,
@@ -2592,7 +2789,12 @@ socket.on('auctionFinished', async (data) => {
                         );
                     }
 
-                    tradeMessage.textContent = 'Trade offer sent.';
+                    const opponentName = document.getElementById(
+                        'trade-opponent'
+                    ).selectedOptions[0]?.textContent || 'the other player';
+                    tradeMessage.textContent = localGameMode
+                        ? `${localCurrentPlayerName} sent a trade offer to ${opponentName}.`
+                        : 'Trade offer sent.';
                 } catch (error) {
                     tradeMessage.textContent = error.message;
                 } finally {
@@ -2638,6 +2840,9 @@ socket.on('auctionFinished', async (data) => {
                         body: JSON.stringify({
                             gameId: Number(gameId),
                             tradeId,
+                            respondingPlayerId: Number(
+                                responseButton.dataset.receivingPlayerId
+                            ),
                             action
                         })
                     });
@@ -2656,7 +2861,9 @@ socket.on('auctionFinished', async (data) => {
                         await loadPlayerTokens();
                     }
 
-                    tradeOffersMessage.textContent = result.message;
+                    tradeOffersMessage.textContent = localGameMode
+                        ? `${localCurrentPlayerName}: ${result.message}`
+                        : result.message;
 
                     if (tradeOffersList.children.length === 0) {
                         tradeOffersMessage.textContent +=
@@ -2687,7 +2894,15 @@ socket.on('auctionFinished', async (data) => {
 
                     tradeOffersList.replaceChildren();
 
-                    if (result.offers.length === 0) {
+                    const visibleOffers = localGameMode
+                        ? result.offers.filter(
+                            offer =>
+                                Number(offer.receivingPlayerId) ===
+                                Number(currentUserPlayerId)
+                        )
+                        : result.offers;
+
+                    if (visibleOffers.length === 0) {
                         tradeOffersMessage.textContent =
                             'There are no pending offers.';
                         return;
@@ -2695,7 +2910,7 @@ socket.on('auctionFinished', async (data) => {
 
                     tradeOffersMessage.textContent = '';
 
-                    result.offers.forEach(offer => {
+                    visibleOffers.forEach(offer => {
                         const offerCard = document.createElement('article');
                         const heading = document.createElement('h3');
                         const exchange = document.createElement('div');
@@ -2756,7 +2971,7 @@ socket.on('auctionFinished', async (data) => {
                             offer.properties.filter(
                                 property =>
                                     Number(property.giverPlayerId) ===
-                                    Number(currentUserPlayerId)
+                                Number(offer.receivingPlayerId)
                             );
 
                         appendOfferSide(
@@ -2782,11 +2997,15 @@ socket.on('auctionFinished', async (data) => {
                         acceptButton.textContent = 'Accept';
                         acceptButton.dataset.tradeAction = 'accept';
                         acceptButton.dataset.tradeId = offer.tradeId;
+                        acceptButton.dataset.receivingPlayerId =
+                            offer.receivingPlayerId;
 
                         rejectButton.type = 'button';
                         rejectButton.textContent = 'Reject';
                         rejectButton.dataset.tradeAction = 'reject';
                         rejectButton.dataset.tradeId = offer.tradeId;
+                        rejectButton.dataset.receivingPlayerId =
+                            offer.receivingPlayerId;
 
                         actions.append(acceptButton, rejectButton);
                         offerCard.append(actions);
@@ -3001,7 +3220,7 @@ socket.on('auctionFinished', async (data) => {
                     );
                 }
 
-                diceResult.textContent = data.message;
+                diceResult.textContent = formatLocalActionMessage(data.message);
 
                 const latestGameData = await loadPlayerTokens();
                 const updatedProperty = latestGameData?.properties?.find(
@@ -3042,7 +3261,7 @@ socket.on('auctionFinished', async (data) => {
                     );
                 }
 
-                diceResult.textContent = data.message;
+                diceResult.textContent = formatLocalActionMessage(data.message);
 
                 const latestGameData = await loadPlayerTokens();
                 const updatedProperty = latestGameData?.properties?.find(
@@ -3085,7 +3304,7 @@ socket.on('auctionFinished', async (data) => {
                     );
                 }
 
-                diceResult.textContent = data.message;
+                diceResult.textContent = formatLocalActionMessage(data.message);
 
                 const latestGameData = await loadPlayerTokens();
                 const updatedProperty = latestGameData?.properties?.find(
@@ -3107,6 +3326,22 @@ socket.on('auctionFinished', async (data) => {
         const chanceCardTitle = document.getElementById('chance-card-title');
         const chanceCardMessage = document.getElementById('chance-card-message');
         const chanceCardContinue = document.getElementById('chance-card-continue');
+        const jailResultDialog = document.getElementById('jail-result-dialog');
+        const jailResultMessage = document.getElementById('jail-result-message');
+        const jailResultContinue = document.getElementById('jail-result-continue');
+
+        jailResultContinue.addEventListener('click', () => {
+            jailResultDialog.close();
+        });
+
+        function showJailResultPopup(message) {
+            jailResultMessage.textContent = message;
+            jailResultDialog.showModal();
+
+            return new Promise(resolve => {
+                jailResultDialog.addEventListener('close', resolve, { once: true });
+            });
+        }
 
         chanceCardContinue.addEventListener('click', () => {
             chanceCardDialog.close();
@@ -3177,6 +3412,10 @@ socket.on('auctionFinished', async (data) => {
                     'The effect for this card will be added in a later step.';
             }
 
+            chanceCardMessage.textContent = formatLocalActionMessage(
+                chanceCardMessage.textContent
+            );
+
             chanceCardDialog.showModal();
 
             return new Promise(resolve => {
@@ -3193,6 +3432,8 @@ socket.on('auctionFinished', async (data) => {
 
         const auctionBiddingSection = document.getElementById('auction-bidding-section');
         const auctionBidAmount = document.getElementById('auction-bid-amount');
+        const auctionBidder = document.getElementById('auction-bidder');
+        const auctionBidderLabel = document.getElementById('auction-bidder-label');
         const placeBidButton = document.getElementById('place-bid-button');
         const auctionBidMessage = document.getElementById('auction-bid-message');
         const auctionCountdown = document.getElementById('auction-countdown');
@@ -3231,7 +3472,7 @@ socket.on('auctionFinished', async (data) => {
                     throw new Error(data.message || 'Could not use the Jail card.');
                 }
 
-                diceResult.textContent = data.message;
+                diceResult.textContent = formatLocalActionMessage(data.message);
             } catch (error) {
                 diceResult.textContent = error.message;
             } finally {
@@ -3290,18 +3531,26 @@ socket.on('auctionFinished', async (data) => {
 
         const rollMessage = data.testRentLanding
             ? `Test landing: Player 2 was moved to ${data.testPropertyName}.`
-            : `You rolled a ${data.dice.die1} and a ${data.dice.die2}.`;
+            : localGameMode
+                ? `${localCurrentPlayerName} rolled a ${data.dice.die1} and a ${data.dice.die2}.`
+                : `You rolled a ${data.dice.die1} and a ${data.dice.die2}.`;
         const outcomeMessage = data.jailBailPaid
-            ? 'You paid $50 bail and left Jail.'
+            ? localGameMode
+                ? `${localCurrentPlayerName} paid $50 bail and left Jail.`
+                : 'You paid $50 bail and left Jail.'
             : data.jailAttempt
-                ? `${data.message} (attempt ${data.jailAttempt} of 3).`
+                ? `${formatLocalActionMessage(data.message)} (attempt ${data.jailAttempt} of 3).`
                 : !data.message
                     ? ''
-                    : data.message;
+                    : formatLocalActionMessage(data.message);
 
         diceResult.textContent = outcomeMessage
             ? `${rollMessage} ${outcomeMessage}`
             : rollMessage;
+
+        if (data.jailAttempt) {
+            await showJailResultPopup(outcomeMessage);
+        }
 
         const gameData = await loadPlayerTokens();
 
@@ -3348,6 +3597,13 @@ async function endTurn() {
         }
 
         console.log('Next player:', data.currentPlayerId);
+
+        if (localGameMode) {
+            await loadPlayerTokens();
+            diceResult.textContent = localCurrentPlayerName
+                ? `${localCurrentPlayerName}, it's your turn.`
+                : 'Waiting for the next turn.';
+        }
     } catch (error) {
         console.error('End turn error:', error);
         alert(error.message);
@@ -3401,7 +3657,7 @@ async function endTurn() {
 
         // Purchase succeeded.
         propertyPurchaseMenu.hidden = true;
-        diceResult.textContent = data.message;
+        diceResult.textContent = formatLocalActionMessage(data.message);
 
         // Refresh player balances and token positions.
         await loadPlayerTokens();
@@ -3438,6 +3694,30 @@ auctionPropertyButton.addEventListener('click', async (event) => {
         if (!response.ok) {
             diceResult.textContent = result.message;
             console.log('Auction start rejected:', result.message);
+            return;
+        }
+
+        if (localGameMode) {
+            activeAuctionId = result.auctionId;
+            propertyPurchaseMenu.hidden = true;
+            auctionBiddingSection.hidden = false;
+            auctionBidMessage.textContent = 'Auction started!';
+            auctionHighestBidder.textContent = 'Highest bidder: No bids yet.';
+            auctionBidAmount.value = '';
+            auctionBidderLabel.hidden = false;
+            auctionBidder.hidden = false;
+            const gameData = await loadPlayerTokens();
+            auctionBidder.replaceChildren();
+            (gameData?.players || []).filter(player =>
+                Number(player.is_bankrupt) !== 1 &&
+                Number(player.is_in_jail) !== 1
+            ).forEach(player => {
+                const option = document.createElement('option');
+                option.value = player.player_id;
+                option.textContent = player.player_name;
+                auctionBidder.append(option);
+            });
+            startAuctionCountdown(result.endsAt, result.propertyName);
         }
     } catch (error) {
         console.error('Start auction error:', error);
@@ -3469,6 +3749,7 @@ placeBidButton.addEventListener('click', async () => {
             body: JSON.stringify({
                 gameId,
                 auctionId: activeAuctionId,
+                playerId: localGameMode ? Number(auctionBidder.value) : null,
                 bid
             })
         });
@@ -3479,6 +3760,11 @@ placeBidButton.addEventListener('click', async () => {
 
         if (response.ok) {
             auctionBidAmount.value = '';
+            if (localGameMode) {
+                const bidder = auctionBidder.selectedOptions[0]?.textContent;
+                auctionHighestBidder.textContent =
+                    `Highest bidder: ${bidder} ($${data.highestBid}).`;
+            }
         }
     } catch (error) {
         console.error('Place bid error:', error);
@@ -3575,6 +3861,10 @@ placeBidButton.addEventListener('click', async () => {
 
     purchasePropertyName.textContent = space.name;
     purchasePropertyPrice.textContent = `Price: $${space.price}`;
+    document.getElementById('purchase-property-prompt').textContent =
+        localGameMode && localCurrentPlayerName
+            ? `${localCurrentPlayerName}, do you want to purchase this?`
+            : 'Do you want to purchase this?';
     propertyPurchaseMenu.hidden = false;
 
 }
@@ -3584,10 +3874,14 @@ placeBidButton.addEventListener('click', async () => {
         const popup = document.getElementById('rent-popup');
 
         document.getElementById('rent-popup-property').textContent =
-            `You landed on ${rent.propertyName}.`;
+            localGameMode && localCurrentPlayerName
+                ? `${localCurrentPlayerName} landed on ${rent.propertyName}.`
+                : `You landed on ${rent.propertyName}.`;
 
         document.getElementById('rent-popup-amount').textContent =
-            `Rent: $${rent.rent}`;
+            localGameMode && localCurrentPlayerName
+                ? `${localCurrentPlayerName} owes rent: $${rent.rent}`
+                : `Rent: $${rent.rent}`;
 
         document.getElementById('rent-popup-owner').textContent =
             `Owned by ${rent.ownerPlayerName}`;
@@ -4268,7 +4562,7 @@ placeBidButton.addEventListener('click', async () => {
                     );
                 }
 
-                diceResult.textContent = data.message;
+                diceResult.textContent = formatLocalActionMessage(data.message);
                 await loadPlayerTokens();
             } catch (error) {
                 message.textContent = error.message;
@@ -4639,8 +4933,10 @@ placeBidButton.addEventListener('click', async () => {
                         card.append(tradeButton);
                     }
 
-                    openTradeOffersButton.hidden = false;
-                    card.append(openTradeOffersButton);
+                    if (!localGameMode || isCurrentUserTurn) {
+                        openTradeOffersButton.hidden = false;
+                        card.append(openTradeOffersButton);
+                    }
                 }
 
                 if (buildingControls) {
@@ -4673,12 +4969,36 @@ placeBidButton.addEventListener('click', async () => {
 
                 const data = await response.json();
 
+                if (localGameActions) {
+                    localGameActions.hidden = !(
+                        localGameMode &&
+                        data.game.game_mode === 'local' &&
+                        data.game.game_status === 'in_progress'
+                    );
+                }
+
                 placePlayerTokens(data.players);
                 placePropertyBuildings(data.properties || []);
                 const currentPlayerId = Number(data.game.current_player_id);
                 const currentPlayer = data.players.find(
                     player => Number(player.player_id) === currentPlayerId
                 );
+                localCurrentPlayerName = currentPlayer?.player_name || '';
+                if (localGameMode) {
+                    if (lastAnnouncedLocalTurnPlayerId === null) {
+                        diceResult.textContent = localCurrentPlayerName
+                            ? `${localCurrentPlayerName}, it's your turn.`
+                            : 'Waiting for the next turn.';
+                    } else if (
+                        lastAnnouncedLocalTurnPlayerId !== currentPlayerId
+                    ) {
+                        diceResult.textContent = localCurrentPlayerName
+                            ? `${localCurrentPlayerName}, it's your turn.`
+                            : 'Waiting for the next turn.';
+                    }
+
+                    lastAnnouncedLocalTurnPlayerId = currentPlayerId;
+                }
                 const turnIndicator = document.getElementById('current-turn-indicator');
                 if (turnIndicator) {
                     turnIndicator.textContent = currentPlayer
@@ -4687,7 +5007,9 @@ placeBidButton.addEventListener('click', async () => {
                 }
 
                 const myPlayer = data.players.find(
-                    player => Number(player.user_id) === Number(data.currentUserId)
+                    player => localGameMode
+                        ? Number(player.player_id) === Number(currentPlayerId)
+                        : Number(player.user_id) === Number(data.currentUserId)
                 );
                 currentUserPlayerId = myPlayer
                     ? Number(myPlayer.player_id)
@@ -4723,6 +5045,7 @@ placeBidButton.addEventListener('click', async () => {
                     currentPlayerId,
                     canTrade
                 );
+                positionLocalGameActions();
 
                 if (propertyCardDialog.open && displayedPropertyCard) {
                     const updatedProperty = (data.properties || []).find(
@@ -4753,6 +5076,65 @@ placeBidButton.addEventListener('click', async () => {
                         Number(myPlayer.is_in_jail) === 1 &&
                         hasJailCard
                     );
+                }
+
+                if (!localResumeStateRestored && localGameMode) {
+                    localResumeStateRestored = true;
+
+                    if (
+                        data.game.game_mode === 'local' &&
+                        data.game.game_status === 'in_progress' &&
+                        currentPlayer
+                    ) {
+                        rolledDoubles =
+                            Number(currentPlayer.consecutive_doubles) > 0;
+
+                        if (data.activeAuction) {
+                            const auction = data.activeAuction;
+                            activeAuctionId = Number(auction.auction_id);
+                            propertyPurchaseMenu.hidden = true;
+                            auctionBiddingSection.hidden = false;
+                            auctionBidderLabel.hidden = false;
+                            auctionBidder.hidden = false;
+                            auctionBidder.replaceChildren();
+                            data.players
+                                .filter(player =>
+                                    Number(player.is_bankrupt) !== 1 &&
+                                    Number(player.is_in_jail) !== 1
+                                )
+                                .forEach(player => {
+                                    const option = document.createElement('option');
+                                    option.value = player.player_id;
+                                    option.textContent = player.player_name;
+                                    auctionBidder.append(option);
+                                });
+                            auctionHighestBidder.textContent = auction.highest_bidder_name
+                                ? `Highest bidder: ${auction.highest_bidder_name} ($${auction.highest_bid}).`
+                                : 'Highest bidder: No bids yet.';
+                            startAuctionCountdown(
+                                auction.ends_at,
+                                auction.property_name
+                            );
+                        } else {
+                            const owesPendingDebt = (data.pendingDebts || []).some(
+                                debt => Number(debt.debtor_player_id) === currentPlayerId
+                            );
+
+                            if (
+                                Number(data.game.turn_has_rolled) === 1 &&
+                                !owesPendingDebt
+                            ) {
+                                showPropertyPurchaseMenu(
+                                    Number(currentPlayer.position),
+                                    data
+                                );
+
+                                if (propertyPurchaseMenu.hidden && !rolledDoubles) {
+                                    await endTurn();
+                                }
+                            }
+                        }
+                    }
                 }
 
                 const popupOpen =

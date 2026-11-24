@@ -22,7 +22,12 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`User` (
 CREATE TABLE IF NOT EXISTS `onlineopoly`.`Game` (
   `game_id` INT NOT NULL AUTO_INCREMENT,
   `game_status` VARCHAR(60) NOT NULL DEFAULT 'waiting',
+  `game_mode` VARCHAR(12) NOT NULL DEFAULT 'online',
+  `is_saved` TINYINT NOT NULL DEFAULT 0,
+  `saved_at` DATETIME NULL DEFAULT NULL,
   `player_count` INT NOT NULL DEFAULT 0,
+  `host_user_id` INT NULL,
+  `current_player_id` INT NULL,
   `gamestarted_at` DATETIME NULL DEFAULT NULL,
   `turn_has_rolled` TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY (`game_id`)
@@ -32,6 +37,8 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`Game` (
 CREATE TABLE IF NOT EXISTS `onlineopoly`.`Player` (
   `player_id` INT NOT NULL AUTO_INCREMENT,
   `player_name` VARCHAR(45) NOT NULL,
+  `token_type` VARCHAR(45) NULL,
+  `token_locked` TINYINT NOT NULL DEFAULT 0,
   `money` DECIMAL(10,2) NOT NULL DEFAULT 1500.00,
   `position` INT NOT NULL DEFAULT 0,
   `is_in_jail` TINYINT NOT NULL DEFAULT 0,
@@ -43,7 +50,6 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`Player` (
   `user_id` INT NOT NULL,
   `game_id` INT NOT NULL,
   PRIMARY KEY (`player_id`),
-  UNIQUE INDEX `user_game_UNIQUE` (`user_id` ASC, `game_id` ASC),
   UNIQUE INDEX `player_game_pair_UNIQUE` (`player_id` ASC, `game_id` ASC),
   INDEX `fk_Player_User1_idx` (`user_id` ASC) VISIBLE,
   INDEX `fk_Player_Game1_idx` (`game_id` ASC) VISIBLE,

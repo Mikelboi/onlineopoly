@@ -105,6 +105,11 @@
                 window.location.href = '/lobby';
             });
 
+        document.getElementById('play-local')
+            .addEventListener('click', () => {
+                window.location.href = '/local-lobby';
+            });
+
         document.getElementById('how-to-play')
             .addEventListener('click', () => {
                 window.open('/rules', '_blank', 'noopener');
@@ -115,24 +120,32 @@
                 window.location.href = '/stats';
             });
 
-        document.getElementById('log-out')
-            .addEventListener('click', async () => {
-                try {
-                    const response = await fetch('/logout', {
-                        method: 'POST'
-                    });
+        const logoutButton = document.getElementById('log-out');
+        logoutButton.addEventListener('click', async () => {
+            logoutButton.disabled = true;
+            logoutButton.textContent = 'Logging Out...';
 
-                    if (response.ok) {
-                        window.location.href = '/login';
-                    } else {
-                        message.textContent =
-                            'Could not log out. Please try again.';
-                    }
-                } catch (error) {
+            try {
+                const response = await fetch('/logout', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                } else {
                     message.textContent =
-                        'Could not connect to the server.';
+                        'Could not log out. Please try again.';
+                    logoutButton.disabled = false;
+                    logoutButton.textContent = 'Log Out';
                 }
-            });
+            } catch (error) {
+                message.textContent =
+                    'Could not connect to the server.';
+                logoutButton.disabled = false;
+                logoutButton.textContent = 'Log Out';
+            }
+        });
     </script>
 </body>
 </html>

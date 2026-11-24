@@ -1,6 +1,283 @@
 function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBody, io }) {
     const route = req.url.split('?')[0];
 
+    if (req.method === 'GET' && route === '/games/local/saved') {
+        const session = getSession(req);
+        if (!session) {
+            sendJson(res, 401, { message: 'Please log in to view local games.' });
+            return true;
+        }
+
+        db.query(
+            `SELECT
+                Game.game_id,
+                Game.player_count,
+                Game.game_status,
+                Game.saved_at,
+                CurrentPlayer.player_name AS current_player_name
+             FROM Game
+             LEFT JOIN Player AS CurrentPlayer
+               ON CurrentPlayer.player_id = Game.current_player_id
+              AND CurrentPlayer.game_id = Game.game_id
+             WHERE Game.game_mode = 'local'
+               AND Game.game_status = 'in_progress'
+               AND Game.is_saved = 1
+               AND Game.host_user_id = ?
+             ORDER BY Game.saved_at DESC, Game.game_id DESC`,
+            [session.userId],
+            (error, games) => {
+                if (error) {
+                    console.error('Load saved local games error:', error);
+                    sendJson(res, 500, { message: 'Could not load saved local games.' });
+                    return;
+                }
+                sendJson(res, 200, { games });
+            }
+        );
+        return true;
+    }
+
+    if (
+        req.method === 'POST' &&
+        (route === '/games/local/save' || route === '/games/local/leave')
+    ) {
+        const session = getSession(req);
+        if (!session) {
+            sendJson(res, 401, { message: 'Please log in to save this local game.' });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const gameId = Number(requestData.gameId);
+            if (!Number.isSafeInteger(gameId) || gameId <= 0) {
+                sendJson(res, 400, { message: 'Invalid game ID.' });
+                return;
+            }
+
+            if (route === '/games/local/leave') {
+                db.query(
+                    `SELECT game_id
+                     FROM Game
+                     WHERE game_id = ?
+                       AND host_user_id = ?
+                       AND game_mode = 'local'
+                       AND game_status = 'in_progress'`,
+                    [gameId, session.userId],
+                    (error, games) => {
+                        if (error) {
+                            console.error('Leave local game error:', error);
+                            sendJson(res, 500, { message: 'Could not leave this local game.' });
+                            return;
+                        }
+                        if (games.length === 0) {
+                            sendJson(res, 404, {
+                                message: 'This active local game could not be found.'
+                            });
+                            return;
+                        }
+                        sendJson(res, 200, {
+                            message: 'You left the local game. It will appear here only if you saved it.'
+                        });
+                    }
+                );
+                return;
+            }
+
+            db.query(
+                `UPDATE Game
+                 SET is_saved = 1,
+                     saved_at = CURRENT_TIMESTAMP
+                 WHERE game_id = ?
+                   AND host_user_id = ?
+                   AND game_mode = 'local'
+                   AND game_status = 'in_progress'`,
+                [gameId, session.userId],
+                (error, result) => {
+                    if (error) {
+                        console.error('Save local game error:', error);
+                        sendJson(res, 500, { message: 'Could not save this local game.' });
+                        return;
+                    }
+                    if (result.affectedRows !== 1) {
+                        sendJson(res, 404, {
+                            message: 'This active local game could not be found.'
+                        });
+                        return;
+                    }
+
+                    sendJson(res, 200, {
+                        message: route === '/games/local/leave'
+                            ? 'Local game saved. You can resume it from the local lobby.'
+                            : 'Local game saved.'
+                    });
+                }
+            );
+        });
+        return true;
+    }
+
+    if (req.method === 'POST' && route === '/games/local/start') {
+        const session = getSession(req);
+
+        if (!session) {
+            sendJson(res, 401, { message: 'Please log in before starting a local game.' });
+            return true;
+        }
+
+        readJsonBody(req, res, requestData => {
+            const requestedPlayers = requestData.players;
+            const allowedTokens = new Set([
+                'top_hat', 'race_car', 'dog', 'battleship', 'thimble',
+                'boot', 'cat', 'wheelbarrow', 'duck', 'windmill'
+            ]);
+            if (
+                !Array.isArray(requestedPlayers) ||
+                requestedPlayers.length < 2 ||
+                requestedPlayers.length > 4 ||
+                requestedPlayers.some(player =>
+                    !player ||
+                    !Number.isSafeInteger(player.playerNumber) ||
+                    player.playerNumber < 1 ||
+                    player.playerNumber > 4 ||
+                    typeof player.name !== 'string' ||
+                    player.name.trim().length === 0 ||
+                    player.name.trim().length > 45 ||
+                    !allowedTokens.has(player.tokenType)
+                )
+            ) {
+                sendJson(res, 400, {
+                    message: 'Add 2 to 4 players and choose a valid token for each one.'
+                });
+                return;
+            }
+
+            const playerNames = [...requestedPlayers].sort(
+                (first, second) => first.playerNumber - second.playerNumber
+            );
+            if (new Set(playerNames.map(player => player.playerNumber)).size !== playerNames.length) {
+                sendJson(res, 400, { message: 'Each player must have a unique player number.' });
+                return;
+            }
+            if (playerNames.some((player, index) => player.playerNumber !== index + 1)) {
+                sendJson(res, 400, { message: 'Player numbers must be in order from 1.' });
+                return;
+            }
+            const normalizedNames = playerNames.map(player => player.name.trim());
+            const distinctNames = new Set(
+                normalizedNames.map(name => name.toLocaleLowerCase())
+            );
+            if (distinctNames.size !== normalizedNames.length) {
+                sendJson(res, 400, { message: 'Each player needs a different name.' });
+                return;
+            }
+
+            const distinctTokens = new Set(playerNames.map(player => player.tokenType));
+            if (distinctTokens.size !== playerNames.length) {
+                sendJson(res, 400, { message: 'Each player must choose a different token.' });
+                return;
+            }
+
+            if (
+                normalizedNames[0].toLocaleLowerCase() !==
+                String(session.username).toLocaleLowerCase()
+            ) {
+                sendJson(res, 400, { message: 'The logged-in player must be Player 1.' });
+                return;
+            }
+
+            db.getConnection((connectionErr, connection) => {
+                if (connectionErr) {
+                    sendJson(res, 500, { message: 'Could not create the local game.' });
+                    return;
+                }
+
+                connection.beginTransaction(async beginErr => {
+                    if (beginErr) {
+                        connection.release();
+                        sendJson(res, 500, { message: 'Could not create the local game.' });
+                        return;
+                    }
+
+                    const query = (sql, values = []) => new Promise((resolve, reject) => {
+                        connection.query(sql, values, (error, result) => {
+                            if (error) reject(error);
+                            else resolve(result);
+                        });
+                    });
+
+                    try {
+                        const gameResult = await query(
+                            `INSERT INTO Game
+                                (game_status, game_mode, player_count, host_user_id)
+                             VALUES ('waiting', 'local', ?, ?)`,
+                            [normalizedNames.length, session.userId]
+                        );
+                        const gameId = Number(gameResult.insertId);
+
+                        for (let index = 0; index < normalizedNames.length; index += 1) {
+                            await query(
+                                `INSERT INTO Player
+                                    (player_name, user_id, game_id, token_type, token_locked)
+                                 VALUES (?, ?, ?, ?, 1)`,
+                                [
+                                    normalizedNames[index],
+                                    session.userId,
+                                    gameId,
+                                    playerNames[index].tokenType
+                                ]
+                            );
+                        }
+
+                        const firstPlayers = await query(
+                            `SELECT player_id
+                             FROM Player
+                             WHERE game_id = ?
+                             ORDER BY player_id ASC
+                             LIMIT 1`,
+                            [gameId]
+                        );
+                        if (firstPlayers.length !== 1) {
+                            throw new Error('Could not determine the first local player.');
+                        }
+                        const firstPlayerId = Number(firstPlayers[0].player_id);
+
+                        await query(
+                            `UPDATE Game
+                             SET game_status = 'in_progress',
+                                 current_player_id = ?,
+                                 gamestarted_at = CURRENT_TIMESTAMP
+                             WHERE game_id = ?`,
+                            [firstPlayerId, gameId]
+                        );
+
+                        await new Promise((resolve, reject) => {
+                            connection.commit(error => {
+                                if (error) reject(error);
+                                else resolve();
+                            });
+                        });
+                        connection.release();
+                        sendJson(res, 201, {
+                            message: 'Local game started.',
+                            gameId,
+                            playerCount: normalizedNames.length
+                        });
+                    } catch (error) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('Create local game error:', error);
+                            sendJson(res, 500, {
+                                message: 'Could not create the local game.'
+                            });
+                        });
+                    }
+                });
+            });
+        });
+
+        return true;
+    }
+
     if (req.method === 'GET' && route === '/games/my-stats') {
         const session = getSession(req);
 
@@ -544,7 +821,7 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
         }
 
         db.query(
-            `SELECT game_id, game_status, player_count, host_user_id, current_player_id, turn_has_rolled
+            `SELECT game_id, game_status, game_mode, player_count, host_user_id, current_player_id, turn_has_rolled
              FROM Game
              WHERE game_id = ?`,
             [gameId],
@@ -565,7 +842,7 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                 }
 
                 db.query(
-                    `SELECT player_id, user_id, player_name, money, position, token_type,  is_in_jail, jail_free_cards, jail_turns
+                    `SELECT player_id, user_id, player_name, money, position, token_type, consecutive_doubles, is_bankrupt, is_in_jail, jail_free_cards, jail_turns
                      FROM Player
                      WHERE game_id = ?
                      ORDER BY player_id`,
@@ -684,13 +961,44 @@ function handleGameLobbyRequest(req, res, { db, getSession, sendJson, readJsonBo
                                                     return;
                                                 }
 
-                                                sendJson(res, 200, {
-                                                    game: games[0],
-                                                    players,
-                                                    properties,
-                                                    pendingDebts,
-                                                    currentUserId: session.userId
-                                                });
+                                                db.query(
+                                                    `SELECT
+                                                         auction.auction_id,
+                                                         auction.property_id,
+                                                         auction.highest_bid,
+                                                         auction.highest_bidder_id,
+                                                         auction.ends_at,
+                                                         property.property_name,
+                                                         bidder.player_name AS highest_bidder_name
+                                                     FROM Property_Auction AS auction
+                                                     JOIN Property AS property
+                                                       ON property.property_id = auction.property_id
+                                                     LEFT JOIN Player AS bidder
+                                                       ON bidder.player_id = auction.highest_bidder_id
+                                                      AND bidder.game_id = auction.game_id
+                                                     WHERE auction.game_id = ?
+                                                       AND auction.auction_status = 'open'
+                                                     LIMIT 1`,
+                                                    [gameId],
+                                                    (auctionErr, auctions) => {
+                                                        if (auctionErr) {
+                                                            console.error('Load active local auction error:', auctionErr);
+                                                            sendJson(res, 500, {
+                                                                message: 'Could not load the active auction.'
+                                                            });
+                                                            return;
+                                                        }
+
+                                                        sendJson(res, 200, {
+                                                            game: games[0],
+                                                            players,
+                                                            properties,
+                                                            pendingDebts,
+                                                            activeAuction: auctions[0] || null,
+                                                            currentUserId: session.userId
+                                                        });
+                                                    }
+                                                );
                                             }
                                         );
                                     }

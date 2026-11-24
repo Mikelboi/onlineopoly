@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onlineopoly - Local Game</title>
+    <style>
+        body {
+            font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+            background: #c2eccd;
+            color: #222;
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            box-sizing: border-box;
+        }
+
+        main {
+            width: min(600px, 100%);
+            padding: 32px;
+            box-sizing: border-box;
+            background: #fff;
+            border: 5px solid #111;
+            border-radius: 24px;
+        }
+
+        h1, h2, #message { text-align: center; }
+        h1 { color: #f48859; }
+        form { display: flex; gap: 10px; }
+        input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #718577;
+            border-radius: 6px;
+            font: inherit;
+        }
+        button {
+            padding: 12px 16px;
+            border: 0;
+            border-radius: 6px;
+            background: #e52521;
+            color: #fff;
+            font: inherit;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover { background: #bd1c19; }
+        button:disabled { background: #999; cursor: not-allowed; }
+        #start-local-game:not(:disabled) { background: #238636; }
+        #start-local-game:not(:disabled):hover { background: #176b2a; }
+        #player-list { list-style: none; padding: 0; }
+        #player-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin: 10px 0;
+            padding: 10px 12px;
+            background: #f3f8f4;
+            border-radius: 8px;
+        }
+        #player-list li button { padding: 7px 10px; }
+        #saved-game-list { margin-top: 12px; }
+        .saved-game {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin: 10px 0;
+            padding: 12px;
+            background: #f3f8f4;
+            border: 1px solid #c2eccd;
+            border-radius: 8px;
+        }
+        .saved-game p { margin: 3px 0; }
+        .saved-game button { flex-shrink: 0; }
+        .actions { display: flex; gap: 12px; margin-top: 24px; }
+        .actions button { flex: 1; }
+        #message { min-height: 24px; }
+        .token-options {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(55px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .token-options button {
+            min-height: 68px;
+            padding: 8px;
+            background: #fffdf3;
+            border: 2px solid #356b43;
+            color: #222;
+            font-size: 28px;
+        }
+        .token-options button:hover { background: #e3f5e7; }
+        .token-options button:disabled { opacity: 0.45; }
+        .token-name { font-size: 14px; }
+        #current-picker { font-size: 20px; font-weight: bold; }
+        @media (max-width: 480px) {
+            main { padding: 22px; }
+            form, .actions { flex-direction: column; }
+            .token-options { grid-template-columns: repeat(2, minmax(55px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <section id="lobby-setup">
+        <h1>Onlineopoly</h1>
+        <h2>Local Game</h2>
+        <p>Play with up to 4 players.</p>
+
+        <form id="add-player-form">
+            <label for="player-name" hidden>Player name</label>
+            <input id="player-name" maxlength="45" autocomplete="off"
+                placeholder="Enter a player name" required>
+            <button type="submit" id="add-player-button">Add Player</button>
+        </form>
+
+        <ol id="player-list" aria-live="polite"></ol>
+        <p id="player-count">0 of 4 players</p>
+        <p id="message" role="status" aria-live="polite"></p>
+
+        <div class="actions">
+            <button type="button" id="start-local-game" disabled>Start Game</button>
+            <button type="button" id="back-to-menu">Back to Menu</button>
+        </div>
+
+        <section aria-labelledby="saved-games-title">
+            <h2 id="saved-games-title">Saved Local Games</h2>
+            <div id="saved-game-list" aria-live="polite">Loading saved games...</div>
+        </section>
+        </section>
+
+        <section id="token-pick-screen" hidden>
+            <h1>Choose Tokens</h1>
+            <p id="current-picker"></p>
+            <p>Then, let the next player pick their token.</p>
+            <div id="local-token-options" class="token-options"></div>
+            <p id="token-pick-message" role="status" aria-live="polite"></p>
+            <button type="button" id="retry-local-start" hidden>Try Starting Again</button>
+            <button type="button" id="cancel-token-pick">Back to Player List</button>
+        </section>
+    </main>
+
+    <script>
+        const players = [];
+        const maxPlayers = 4;
+        const tokens = [
+            { id: 'top_hat', label: 'Top Hat', icon: '🎩' },
+            { id: 'race_car', label: 'Race Car', icon: '🏎️' },
+            { id: 'dog', label: 'Dog', icon: '🐕' },
+            { id: 'battleship', label: 'Battleship', icon: '🚢' },
+            { id: 'thimble', label: 'Thimble', icon: '🧵' },
+            { id: 'boot', label: 'Boot', icon: '👢' },
+            { id: 'cat', label: 'Cat', icon: '🐈' },
+            { id: 'wheelbarrow', label: 'Wheelbarrow', icon: '🛒' },
+            { id: 'duck', label: 'Duck', icon: '🦆' },
+            { id: 'windmill', label: 'Windmill', icon: '🌬️' }
+        ];
+        const nameInput = document.getElementById('player-name');
+        const playerList = document.getElementById('player-list');
+        const countLabel = document.getElementById('player-count');
+        const message = document.getElementById('message');
+        const startButton = document.getElementById('start-local-game');
+        const lobbySetup = document.getElementById('lobby-setup');
+        const tokenPickScreen = document.getElementById('token-pick-screen');
+        const currentPicker = document.getElementById('current-picker');
+        const tokenOptions = document.getElementById('local-token-options');
+        const tokenPickMessage = document.getElementById('token-pick-message');
+        const retryStartButton = document.getElementById('retry-local-start');
+        const savedGameList = document.getElementById('saved-game-list');
+        let currentPickerIndex = 0;
+
+        function renderPlayers() {
+            playerList.replaceChildren();
+            players.forEach((player, index) => {
+                const item = document.createElement('li');
+                const playerName = document.createElement('span');
+                const chosenToken = tokens.find(token => token.id === player.tokenType);
+                playerName.textContent = `${index + 1}. ${player.name}` +
+                    (player.isHost ? ' (You)' : '') +
+                    (chosenToken ? ` ${chosenToken.icon}` : ' — token not chosen');
+                item.append(playerName);
+
+                if (!player.isHost) {
+                    const removeButton = document.createElement('button');
+                    removeButton.type = 'button';
+                    removeButton.textContent = 'Remove';
+                    removeButton.setAttribute('aria-label', `Remove ${player.name}`);
+                    removeButton.addEventListener('click', () => {
+                        players.splice(index, 1);
+                        renderPlayers();
+                    });
+                    item.append(removeButton);
+                }
+                playerList.append(item);
+            });
+
+            countLabel.textContent = `${players.length} of ${maxPlayers} players`;
+            startButton.disabled = players.length < 2;
+            document.getElementById('add-player-button').disabled =
+                players.length >= maxPlayers;
+        }
+
+        document.getElementById('add-player-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const name = nameInput.value.trim();
+            if (!name) return;
+            if (players.length >= maxPlayers) {
+                message.textContent = 'A local game can have up to 4 players.';
+                return;
+            }
+            if (players.some(player => player.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+                message.textContent = 'Each player needs a different name.';
+                return;
+            }
+
+            players.push({ name, tokenType: null, isHost: false });
+            nameInput.value = '';
+            message.textContent = '';
+            renderPlayers();
+            nameInput.focus();
+        });
+
+        function beginTokenSelection() {
+            if (players.length < 2) return;
+            currentPickerIndex = 0;
+            lobbySetup.hidden = true;
+            tokenPickScreen.hidden = false;
+            retryStartButton.hidden = true;
+            renderTokenChoices();
+        }
+
+        function renderTokenChoices() {
+            const player = players[currentPickerIndex];
+            if (!player) {
+                createLocalGame();
+                return;
+            }
+
+            currentPicker.textContent = `${player.name}, choose your token`;
+            tokenOptions.replaceChildren();
+            tokens.forEach(token => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.disabled = players.some(
+                    other => other.tokenType === token.id
+                );
+                button.setAttribute('aria-label', token.label);
+                button.title = token.label;
+                button.textContent = token.icon;
+                button.addEventListener('click', () => {
+                    player.tokenType = token.id;
+                    currentPickerIndex += 1;
+                    renderPlayers();
+                    renderTokenChoices();
+                });
+
+                const wrapper = document.createElement('div');
+                wrapper.append(button);
+                const label = document.createElement('div');
+                label.className = 'token-name';
+                label.textContent = token.label;
+                wrapper.append(label);
+                tokenOptions.append(wrapper);
+            });
+            tokenPickMessage.textContent = '';
+        }
+
+        async function createLocalGame() {
+            retryStartButton.hidden = true;
+            tokenPickMessage.textContent = 'Starting local game...';
+
+            try {
+                const response = await fetch('/games/local/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        players: players.map((player, index) => ({
+                            playerNumber: index + 1,
+                            name: player.name,
+                            tokenType: player.tokenType
+                        }))
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.message || 'Could not start the game.');
+                }
+                window.location.href =
+                    `/board?gameId=${encodeURIComponent(result.gameId)}&mode=local`;
+            } catch (error) {
+                tokenPickMessage.textContent = error.message;
+                retryStartButton.hidden = false;
+            }
+        }
+
+        startButton.addEventListener('click', beginTokenSelection);
+        retryStartButton.addEventListener('click', createLocalGame);
+
+        document.getElementById('cancel-token-pick').addEventListener('click', () => {
+            players.forEach(player => {
+                player.tokenType = null;
+            });
+            tokenPickScreen.hidden = true;
+            lobbySetup.hidden = false;
+            message.textContent = '';
+            renderPlayers();
+        });
+
+        document.getElementById('back-to-menu').addEventListener('click', () => {
+            window.location.href = '/menu';
+        });
+
+        async function loadSavedGames() {
+            savedGameList.textContent = 'Loading saved games...';
+            try {
+                const response = await fetch('/games/local/saved');
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.message || 'Could not load saved games.');
+                }
+
+                savedGameList.replaceChildren();
+                if (result.games.length === 0) {
+                    savedGameList.textContent = 'No saved local games yet.';
+                    return;
+                }
+
+                result.games.forEach(game => {
+                    const gameCard = document.createElement('div');
+                    gameCard.className = 'saved-game';
+                    const details = document.createElement('div');
+                    const gameName = document.createElement('strong');
+                    gameName.textContent = `Local Game #${game.game_id}`;
+                    const gameInfo = document.createElement('p');
+                    gameInfo.textContent =
+                        `${game.player_count} players · ` +
+                        `${game.current_player_name || 'Ready to resume'} has the turn`;
+                    const savedTime = document.createElement('p');
+                    savedTime.textContent = game.saved_at
+                        ? `Saved ${new Date(game.saved_at).toLocaleString()}`
+                        : 'Progress is saved after each turn.';
+                    details.append(gameName, gameInfo, savedTime);
+
+                    const resumeButton = document.createElement('button');
+                    resumeButton.type = 'button';
+                    resumeButton.textContent = 'Resume';
+                    resumeButton.addEventListener('click', () => {
+                        window.location.href =
+                            `/board?gameId=${encodeURIComponent(game.game_id)}&mode=local`;
+                    });
+                    gameCard.append(details, resumeButton);
+                    savedGameList.append(gameCard);
+                });
+            } catch (error) {
+                savedGameList.textContent = error.message;
+            }
+        }
+
+        async function loadHostAsPlayerOne() {
+            try {
+                const response = await fetch('/session');
+                const session = await response.json();
+                if (!response.ok || !session.loggedIn) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                players.unshift({
+                    name: session.username,
+                    tokenType: null,
+                    isHost: true
+                });
+                renderPlayers();
+                if (new URLSearchParams(window.location.search).get('left') === '1') {
+                    message.textContent =
+                        'You left the local game. It appears here only if you saved it.';
+                }
+                await loadSavedGames();
+            } catch (error) {
+                message.textContent = 'Could not load the logged-in player.';
+            }
+        }
+
+        startButton.disabled = true;
+        loadHostAsPlayerOne();
+    </script>
+</body>
+</html>

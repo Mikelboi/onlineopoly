@@ -299,7 +299,20 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                     db.query(
                         `SELECT player_id, is_in_jail, jail_free_cards
                          FROM Player
-                         WHERE game_id = ? AND user_id = ? AND is_bankrupt = 0`,
+                         WHERE game_id = ?
+                           AND user_id = ?
+                           AND is_bankrupt = 0
+                           AND (
+                               NOT EXISTS (
+                                   SELECT 1 FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                                     AND Game.game_mode = 'local'
+                               )
+                               OR player_id = (
+                                   SELECT current_player_id FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                               )
+                           )`,
                         [gameId, session.userId],
                         (playerErr, players) => {
                             if (playerErr || players.length === 0) {
@@ -445,7 +458,19 @@ function handleGameMovementRequest(req, res, { db, getSession, sendJson, readJso
                                       AND debt.debtor_player_id = Player.player_id
                                 ) AS pending_debt_count
                          FROM Player
-                         WHERE game_id = ? AND user_id = ?`,
+                         WHERE game_id = ?
+                           AND user_id = ?
+                           AND (
+                               NOT EXISTS (
+                                   SELECT 1 FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                                     AND Game.game_mode = 'local'
+                               )
+                               OR player_id = (
+                                   SELECT current_player_id FROM Game
+                                   WHERE Game.game_id = Player.game_id
+                               )
+                           )`,
                         [gameId, gameId, gameId, gameId, session.userId],
                         (playerErr, players) => {
                             if (playerErr) {

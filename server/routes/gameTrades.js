@@ -30,6 +30,7 @@ function handleGameTradeRequest(
             `SELECT
                 Trade_Offer.trade_id AS tradeId,
                 Trade_Offer.offering_player_id AS offeringPlayerId,
+                Trade_Offer.receiving_player_id AS receivingPlayerId,
                 Trade_Offer.offering_cash AS offeringCash,
                 Trade_Offer.receiving_cash AS receivingCash,
                 Trade_Offer.created_at AS createdAt,
@@ -39,6 +40,7 @@ function handleGameTradeRequest(
                 Trade_Offer_Property.property_giver_player_id AS giverPlayerId,
                 GiverPlayer.player_name AS giverPlayerName
              FROM Trade_Offer
+             JOIN Game ON Game.game_id = Trade_Offer.game_id
              JOIN Player AS ReceivingPlayer
                ON ReceivingPlayer.player_id =
                   Trade_Offer.receiving_player_id
@@ -58,10 +60,14 @@ function handleGameTradeRequest(
                   Trade_Offer_Property.property_giver_player_id
               AND GiverPlayer.game_id = Trade_Offer.game_id
              WHERE Trade_Offer.game_id = ?
-               AND ReceivingPlayer.user_id = ?
+               AND (
+                    (Game.game_mode = 'local' AND Game.host_user_id = ?)
+                    OR
+                    (Game.game_mode <> 'local' AND ReceivingPlayer.user_id = ?)
+               )
                AND Trade_Offer.status = 'pending'
              ORDER BY Trade_Offer.created_at`,
-            [gameId, Number(session.userId)],
+            [gameId, Number(session.userId), Number(session.userId)],
             (error, rows) => {
                 if (error) {
                     console.error('Load pending trade offers error:', error);
@@ -78,6 +84,7 @@ function handleGameTradeRequest(
                         offersById.set(row.tradeId, {
                             tradeId: row.tradeId,
                             offeringPlayerId: row.offeringPlayerId,
+                            receivingPlayerId: row.receivingPlayerId,
                             offeringPlayerName: row.offeringPlayerName,
                             offeringCash: row.offeringCash,
                             receivingCash: row.receivingCash,
@@ -119,6 +126,7 @@ function handleGameTradeRequest(
             const gameId = Number(requestData.gameId);
             const tradeId = Number(requestData.tradeId);
             const action = requestData.action;
+            const respondingPlayerId = Number(requestData.respondingPlayerId);
 
             if (
                 !Number.isSafeInteger(gameId) ||
@@ -185,6 +193,7 @@ function handleGameTradeRequest(
                                 Trade_Offer.receiving_cash,
                                 Trade_Offer.status
                              FROM Trade_Offer
+                             JOIN Game ON Game.game_id = Trade_Offer.game_id
                              JOIN Player AS ReceivingPlayer
                                ON ReceivingPlayer.player_id =
                                   Trade_Offer.receiving_player_id
@@ -192,9 +201,22 @@ function handleGameTradeRequest(
                                   Trade_Offer.game_id
                              WHERE Trade_Offer.trade_id = ?
                                AND Trade_Offer.game_id = ?
-                               AND ReceivingPlayer.user_id = ?
+                               AND (
+                                    (Game.game_mode = 'local'
+                                     AND Game.host_user_id = ?
+                                     AND ReceivingPlayer.player_id = ?)
+                                    OR
+                                    (Game.game_mode <> 'local'
+                                     AND ReceivingPlayer.user_id = ?)
+                               )
                              FOR UPDATE`,
-                            [tradeId, gameId, Number(session.userId)]
+                            [
+                                tradeId,
+                                gameId,
+                                Number(session.userId),
+                                respondingPlayerId,
+                                Number(session.userId)
+                            ]
                         );
 
                         if (
@@ -525,6 +547,7 @@ function handleGameTradeRequest(
     readJsonBody(req, res, requestData => {
         const gameId = Number(requestData.gameId);
         const receivingPlayerId = Number(requestData.receivingPlayerId);
+        const localOfferingPlayerId = Number(requestData.offeringPlayerId);
         const offeringCash = Number(requestData.offeringCash || 0);
         const receivingCash = Number(requestData.receivingCash || 0);
         const properties = requestData.properties;
@@ -609,7 +632,8 @@ function handleGameTradeRequest(
 
                 (async () => {
                     const games = await query(
-                        `SELECT game_status, current_player_id, turn_has_rolled
+                        `SELECT game_status, game_mode, host_user_id,
+                                current_player_id, turn_has_rolled
                          FROM Game
                          WHERE game_id = ?
                          FOR UPDATE`,
@@ -626,15 +650,47 @@ function handleGameTradeRequest(
                         );
                     }
 
-                    const offeringPlayers = await query(
-                        `SELECT player_id, player_name, money
-                         FROM Player
-                         WHERE game_id = ?
-                           AND user_id = ?
-                           AND is_bankrupt = 0
-                         FOR UPDATE`,
-                        [gameId, Number(session.userId)]
-                    );
+                    const isLocalGame = games[0].game_mode === 'local';
+                    if (
+                        isLocalGame &&
+                        (!Number.isSafeInteger(localOfferingPlayerId) ||
+                            localOfferingPlayerId <= 0)
+                    ) {
+                        throw Object.assign(
+                            new Error('Select the active local player to trade.'),
+                            { status: 400 }
+                        );
+                    }
+
+                    const offeringPlayers = isLocalGame
+                        ? await query(
+                            `SELECT player_id, player_name, money
+                             FROM Player
+                             WHERE game_id = ?
+                               AND player_id = ?
+                               AND is_bankrupt = 0
+                             FOR UPDATE`,
+                            [gameId, localOfferingPlayerId]
+                        )
+                        : await query(
+                            `SELECT player_id, player_name, money
+                             FROM Player
+                             WHERE game_id = ?
+                               AND user_id = ?
+                               AND is_bankrupt = 0
+                             FOR UPDATE`,
+                            [gameId, Number(session.userId)]
+                        );
+
+                    if (
+                        isLocalGame &&
+                        Number(games[0].host_user_id) !== Number(session.userId)
+                    ) {
+                        throw Object.assign(
+                            new Error('You cannot trade in this local game.'),
+                            { status: 403 }
+                        );
+                    }
 
                     if (offeringPlayers.length === 0) {
                         throw Object.assign(

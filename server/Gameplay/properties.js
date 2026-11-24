@@ -67,6 +67,17 @@ function purchaseProperty(db, userId, gameId, callback) {
                  WHERE user_id = ?
                    AND game_id = ?
                    AND is_bankrupt = 0
+                   AND (
+                       NOT EXISTS (
+                           SELECT 1 FROM Game
+                           WHERE Game.game_id = Player.game_id
+                             AND Game.game_mode = 'local'
+                       )
+                       OR player_id = (
+                           SELECT current_player_id FROM Game
+                           WHERE Game.game_id = Player.game_id
+                       )
+                   )
                  FOR UPDATE`,
                 [userId, gameId],
                 (playerErr, players) => {
@@ -957,6 +968,7 @@ function mortgageProperty(db, userId, gameId, propertyId, callback) {
                    AND p.game_id = ?
                    AND p.is_bankrupt = 0
                    AND g.game_status = 'in_progress'
+                   AND (g.game_mode <> 'local' OR p.player_id = g.current_player_id)
                  FOR UPDATE`,
                 [userId, gameId],
                 (playerErr, players) => {
@@ -1239,6 +1251,7 @@ function unmortgageProperty(db, userId, gameId, propertyId, callback) {
                    AND p.game_id = ?
                    AND p.is_bankrupt = 0
                    AND g.game_status = 'in_progress'
+                   AND (g.game_mode <> 'local' OR p.player_id = g.current_player_id)
                  FOR UPDATE`,
                 [userId, gameId],
                 (playerErr, players) => {
@@ -1498,6 +1511,17 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                  WHERE user_id = ?
                    AND game_id = ?
                    AND is_bankrupt = 0
+                   AND (
+                       NOT EXISTS (
+                           SELECT 1 FROM Game
+                           WHERE Game.game_id = Player.game_id
+                             AND Game.game_mode = 'local'
+                       )
+                       OR player_id = (
+                           SELECT current_player_id FROM Game
+                           WHERE Game.game_id = Player.game_id
+                       )
+                   )
                  FOR UPDATE`,
                 [userId, gameId],
                 (playerErr, players) => {
@@ -1542,6 +1566,7 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                     pp.player_id,
                                     pp.houses,
                                     pp.hotels,
+                                    p.is_in_jail,
                                     p.user_id,
                                     p.player_name,
                                     u.username,
@@ -1623,6 +1648,14 @@ function payRent(db, userId, gameId, callback, rentOptions = {}) {
                                         finishWithoutRent({
                                             rentPaid: false,
                                             reason: 'You landed on your own property.'
+                                        });
+                                        return;
+                                    }
+
+                                    if (Number(owner.is_in_jail) === 1) {
+                                        finishWithoutRent({
+                                            rentPaid: false,
+                                            reason: 'The property owner is in Jail and cannot collect rent.'
                                         });
                                         return;
                                     }

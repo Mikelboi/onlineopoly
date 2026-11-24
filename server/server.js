@@ -21,7 +21,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    if (handleAccountRequest(req, res, {db,bcrypt,crypto, sessions, SESSION_DURATION})) {
+    if (handleAccountRequest(req, res, {db,bcrypt,crypto, sessions, SESSION_DURATION, io})) {
         return; 
     }
 
@@ -64,6 +64,7 @@ io.use((socket, next) => {
 
     socket.data.userId = session.userId;
     socket.data.username = session.username;
+    socket.data.sessionId = sessionId;
 
     next();
 });
