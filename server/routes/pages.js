@@ -11,6 +11,7 @@ const menuPath = path.join( __dirname, '..', '..', 'client', 'Game', 'menu.html'
 const rulesPath = path.join(__dirname, '..', '..', 'client', 'Game', 'rules.html');
 const statsPath = path.join(__dirname, '..', '..', 'client', 'Game', 'stats.html');
 const localLobbyPath = path.join(__dirname, '..', '..', 'client', 'Game', 'local-lobby.html');
+const avatarPath = path.join(__dirname, '..', '..', 'client', 'Game', 'avatar.html');
 
 function servePage(filePath, res) {
     fs.readFile(filePath, (err, data) => {
@@ -94,6 +95,8 @@ function handlePageRequest(req, res) {
         filePath = rulesPath;
     } else if (route === '/stats') {
         filePath = statsPath;
+    } else if (route === '/avatar-selection') {
+        filePath = avatarPath;
     } else if (route === '/lobby') {
         filePath = lobbyPath;
     } else if (route === '/local-lobby') {

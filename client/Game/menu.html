@@ -42,6 +42,19 @@
             box-sizing: border-box;
         }
 
+        .welcome-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin: 20px 0 25px;
+        }
+
+        .welcome-row h2 {
+            width: auto;
+            margin: 0;
+        }
+
         button {
             box-sizing: border-box;
             width: 100%;
@@ -53,6 +66,45 @@
             border-radius: 4px;
             font-weight: bold;
             cursor: pointer;
+        }
+
+        button.avatar-menu-icon {
+            display: block;
+            width: 80px;
+            height: 80px;
+            margin: 16px auto;
+            padding: 8px;
+            border: 3px solid #356b43;
+            border-radius: 50%;
+            background-color: #238636;
+        }
+
+        .avatar-menu-icon img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .avatar-menu-icon img[hidden],
+        .avatar-menu-icon svg[hidden] {
+            display: none;
+        }
+
+        .welcome-row button.avatar-menu-icon {
+            flex: 0 0 80px;
+            margin: 0;
+        }
+
+        button.avatar-menu-icon:hover {
+            background-color: #1b6f2b;
+        }
+
+        .avatar-menu-icon svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+            fill: white;
         }
 
         button:hover {
@@ -68,7 +120,29 @@
 <body>
     <main class="menu-box">
         <h1>ONLINEOPOLY</h1>
-        <h2 id="welcome-heading">Welcome!</h2>
+        <div class="welcome-row">
+            <button
+                id="player-avatar"
+                class="avatar-menu-icon"
+                type="button"
+                aria-label="Choose player avatar"
+                title="Choose player avatar"
+            >
+                <img
+                    id="menu-avatar-image"
+                    alt="Your avatar"
+                    hidden
+                >
+                <svg
+                    id="default-avatar-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                >
+                    <path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.2 0-7.5 2.1-7.5 4.8V22h15v-3.2c0-2.7-3.3-4.8-7.5-4.8Z" />
+                </svg>
+            </button>
+            <h2 id="welcome-heading">Welcome!</h2>
+        </div>
 
         <button id="play-local">Play Local</button>
         <button id="play-online">Play Online</button>
@@ -83,6 +157,8 @@
     <script>
         const message = document.getElementById('message');
         const welcomeHeading = document.getElementById('welcome-heading');
+        const menuAvatarImage = document.getElementById('menu-avatar-image');
+        const defaultAvatarIcon = document.getElementById('default-avatar-icon');
 
         async function loadUsername() {
             try {
@@ -91,6 +167,12 @@
                 if (response.ok) {
                     const result = await response.json();
                     welcomeHeading.textContent = `Welcome, ${result.username}!`;
+
+                    if (result.avatarPath) {
+                        menuAvatarImage.src = result.avatarPath;
+                        menuAvatarImage.hidden = false;
+                        defaultAvatarIcon.hidden = true;
+                    }
                 } else {
                     window.location.href = '/login';
                 }
@@ -100,6 +182,11 @@
         }
 
         loadUsername();
+        document.getElementById('player-avatar')
+            .addEventListener('click', () => {
+                window.location.href = '/avatar-selection';
+            });
+
         document.getElementById('play-online')
             .addEventListener('click', () => {
                 window.location.href = '/lobby';

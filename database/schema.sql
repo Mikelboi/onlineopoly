@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `onlineopoly`.`User` (
   `username` VARCHAR(60) NOT NULL,
   `password` VARCHAR(60) NOT NULL,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `avatar_path` VARCHAR(255) NULL DEFAULT NULL,
   PRIMARY KEY (`user_id`),
   UNIQUE INDEX `username_UNIQUE` (`username` ASC) VISIBLE
 ) ENGINE = InnoDB;
