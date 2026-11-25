@@ -218,9 +218,40 @@
         }
 
         .player-card h3 {
+            display: flex;
+            align-items: center;
+            gap: 5px;
             margin: 0 0 8px;
             color: #238636;
             font-size: 15px;
+        }
+
+        .player-card-token {
+            flex: 0 0 32px;
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            filter:
+                drop-shadow(0 0 1px var(--player-outline-color))
+                drop-shadow(0 0 2px var(--player-outline-color));
+        }
+
+        .player-card-token.token-battleship {
+            flex-basis: 44px;
+            width: 56px;
+            height: 46px;
+        }
+
+        .player-card-token.token-thimble {
+            flex-basis: 38px;
+            width: 46px;
+            height: 36px;
+        }
+
+        .player-card-token.token-wheelbarrow {
+            flex-basis: 44px;
+            width: 46px;
+            height: 36px;
         }
 
         .player-card p {
@@ -1428,17 +1459,30 @@
         }
 
         .player-token {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 25px;
-            line-height: 1;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid #888;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            display: block;
+            width: 50px;
+            height: 48px;
+            flex: 0 0 auto;
+            box-sizing: border-box;
+            background-color: transparent;
+            background-image: var(--token-image);
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: contain;
+            filter:
+                drop-shadow(0 0 1.5px var(--player-outline-color))
+                drop-shadow(0 0 3px var(--player-outline-color))
+                drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+        }
+
+        /* The battleship artwork is wide, so enlarge it inside its token box. */
+        .player-token.token-battleship {
+            background-size: 150% auto;
+        }
+
+        .player-token.token-wheelbarrow {
+            width: 54px;
+            height: 50px;
         }
 
         .property-building-markers {
@@ -2057,6 +2101,24 @@
 <script>
     const localGameMode =
         new URLSearchParams(window.location.search).get('mode') === 'local';
+    const TOKEN_IMAGES = {
+        top_hat: '/Game/sprites/Hat.png',
+        race_car: '/Game/sprites/Car.png',
+        dog: '/Game/sprites/Dog.png',
+        battleship: '/Game/sprites/Battleship.png',
+        thimble: '/Game/sprites/Thimble.png',
+        boot: '/Game/sprites/Boot.png',
+        cat: '/Game/sprites/cat.png',
+        wheelbarrow: '/Game/sprites/Wheelbarrow.png',
+        duck: '/Game/sprites/duck.png',
+        windmill: '/Game/sprites/windmill.png'
+    };
+    const PLAYER_TOKEN_OUTLINE_COLORS = [
+        '#00bfff',
+        '#ff3b8d',
+        '#54d62b',
+        '#ffc928'
+    ];
     let localResumeStateRestored = false;
     let localCurrentPlayerName = '';
     let lastAnnouncedLocalTurnPlayerId = null;
@@ -4105,20 +4167,7 @@ placeBidButton.addEventListener('click', async () => {
                 container.remove();
             });
 
-            const tokenIcons = {
-                top_hat: '🎩',
-                race_car: '🏎️',
-                dog: '🐕',
-                battleship: '🚢',
-                thimble: '🧵',
-                boot: '👢',
-                cat: '🐈',
-                wheelbarrow: '🛒',
-                duck: '🦆',
-                windmill: '🌬️'
-            };
-
-            players.forEach(player => {
+            players.forEach((player, index) => {
                 const space = document.querySelector(
                     `.board-space[data-position="${player.position}"]`
                 );
@@ -4152,11 +4201,22 @@ placeBidButton.addEventListener('click', async () => {
                     space.appendChild(container);
                 }
 
-                const token = document.createElement('span');
+                const token = document.createElement('div');
                 token.className = 'player-token';
-                token.textContent = tokenIcons[player.token_type] || '❓';
+                token.classList.add(`token-${player.token_type}`);
+                const tokenImage = TOKEN_IMAGES[player.token_type];
+                if (!tokenImage) {
+                    console.warn('Unknown player token type:', player.token_type);
+                    return;
+                }
+                token.style.setProperty('--token-image', `url("${tokenImage}")`);
+                token.style.setProperty(
+                    '--player-outline-color',
+                    PLAYER_TOKEN_OUTLINE_COLORS[index % PLAYER_TOKEN_OUTLINE_COLORS.length]
+                );
+                token.setAttribute('role', 'img');
+                token.setAttribute('aria-label', `${player.player_name} token`);
                 token.title = player.player_name;
-                token.setAttribute('aria-label', player.player_name);
 
                 container.appendChild(token);
             });
@@ -4587,19 +4647,6 @@ placeBidButton.addEventListener('click', async () => {
                 document.getElementById('player-card-4')
             ];
 
-            const tokenIcons = {
-                top_hat: '🎩',
-                race_car: '🏎️',
-                dog: '🐕',
-                battleship: '🚢',
-                thimble: '🧵',
-                boot: '👢',
-                cat: '🐈',
-                wheelbarrow: '🛒',
-                duck: '🦆',
-                windmill: '🌬️'
-            };
-
             // Clear all four cards before refreshing the player data.
             playerCards.forEach(card => {
                 if (card) {
@@ -4616,10 +4663,21 @@ placeBidButton.addEventListener('click', async () => {
                 }
 
                 const balance = Number(player.money);
-                const token = tokenIcons[player.token_type] || '❓';
-
                 const name = document.createElement('h3');
-                name.textContent = `${token} ${player.player_name}`;
+                const tokenImage = document.createElement('img');
+                tokenImage.className = 'player-card-token';
+                tokenImage.classList.add(`token-${player.token_type}`);
+                tokenImage.src = TOKEN_IMAGES[player.token_type] || '';
+                tokenImage.style.setProperty(
+                    '--player-outline-color',
+                    PLAYER_TOKEN_OUTLINE_COLORS[index % PLAYER_TOKEN_OUTLINE_COLORS.length]
+                );
+                tokenImage.alt = '';
+                tokenImage.setAttribute('aria-hidden', 'true');
+                name.append(
+                    tokenImage,
+                    document.createTextNode(player.player_name)
+                );
 
                 const money = document.createElement('p');
                 money.textContent = `Cash: ${

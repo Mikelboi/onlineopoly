@@ -87,16 +87,19 @@
             margin: 20px 0;
         }
         .token-options button {
+            display: grid;
+            place-items: center;
             min-height: 68px;
             padding: 8px;
             background: #fffdf3;
             border: 2px solid #356b43;
             color: #222;
-            font-size: 28px;
         }
+        .token-options img { width: 52px; height: 52px; object-fit: contain; }
         .token-options button:hover { background: #e3f5e7; }
         .token-options button:disabled { opacity: 0.45; }
         .token-name { font-size: 14px; }
+        .chosen-token-image { width: 32px; height: 32px; object-fit: contain; flex: 0 0 32px; }
         #current-picker { font-size: 20px; font-weight: bold; }
         @media (max-width: 480px) {
             main { padding: 22px; }
@@ -149,16 +152,16 @@
         const players = [];
         const maxPlayers = 4;
         const tokens = [
-            { id: 'top_hat', label: 'Top Hat', icon: '🎩' },
-            { id: 'race_car', label: 'Race Car', icon: '🏎️' },
-            { id: 'dog', label: 'Dog', icon: '🐕' },
-            { id: 'battleship', label: 'Battleship', icon: '🚢' },
-            { id: 'thimble', label: 'Thimble', icon: '🧵' },
-            { id: 'boot', label: 'Boot', icon: '👢' },
-            { id: 'cat', label: 'Cat', icon: '🐈' },
-            { id: 'wheelbarrow', label: 'Wheelbarrow', icon: '🛒' },
-            { id: 'duck', label: 'Duck', icon: '🦆' },
-            { id: 'windmill', label: 'Windmill', icon: '🌬️' }
+            { id: 'top_hat', label: 'Top Hat', image: '/Game/sprites/Hat.png' },
+            { id: 'race_car', label: 'Race Car', image: '/Game/sprites/Car.png' },
+            { id: 'dog', label: 'Dog', image: '/Game/sprites/Dog.png' },
+            { id: 'battleship', label: 'Battleship', image: '/Game/sprites/Battleship.png' },
+            { id: 'thimble', label: 'Thimble', image: '/Game/sprites/Thimble.png' },
+            { id: 'boot', label: 'Boot', image: '/Game/sprites/Boot.png' },
+            { id: 'cat', label: 'Cat', image: '/Game/sprites/cat.png' },
+            { id: 'wheelbarrow', label: 'Wheelbarrow', image: '/Game/sprites/Wheelbarrow.png' },
+            { id: 'duck', label: 'Duck', image: '/Game/sprites/duck.png' },
+            { id: 'windmill', label: 'Windmill', image: '/Game/sprites/windmill.png' }
         ];
         const nameInput = document.getElementById('player-name');
         const playerList = document.getElementById('player-list');
@@ -182,8 +185,16 @@
                 const chosenToken = tokens.find(token => token.id === player.tokenType);
                 playerName.textContent = `${index + 1}. ${player.name}` +
                     (player.isHost ? ' (You)' : '') +
-                    (chosenToken ? ` ${chosenToken.icon}` : ' — token not chosen');
+                    (chosenToken ? '' : ' — token not chosen');
                 item.append(playerName);
+
+                if (chosenToken) {
+                    const tokenImage = document.createElement('img');
+                    tokenImage.className = 'chosen-token-image';
+                    tokenImage.src = chosenToken.image;
+                    tokenImage.alt = `${chosenToken.label} token`;
+                    item.append(tokenImage);
+                }
 
                 if (!player.isHost) {
                     const removeButton = document.createElement('button');
@@ -251,7 +262,11 @@
                 );
                 button.setAttribute('aria-label', token.label);
                 button.title = token.label;
-                button.textContent = token.icon;
+                const tokenImage = document.createElement('img');
+                tokenImage.src = token.image;
+                tokenImage.alt = '';
+                tokenImage.setAttribute('aria-hidden', 'true');
+                button.append(tokenImage);
                 button.addEventListener('click', () => {
                     player.tokenType = token.id;
                     currentPickerIndex += 1;

@@ -40,11 +40,18 @@
 
         .token-options button {
             min-height: 75px;
-            font-size: 32px;
+            display: grid;
+            place-items: center;
             background: #fffdf3;
             border: 2px solid #356b43;
             border-radius: 12px;
             cursor: pointer;
+        }
+
+        .token-options img {
+            width: 58px;
+            height: 58px;
+            object-fit: contain;
         }
 
         .token-options button:hover {
@@ -73,16 +80,16 @@
     <h1>Choose Your Token</h1>
 
     <div class="token-options">
-        <button type="button" data-token="top_hat" aria-label="Top hat">🎩</button>
-        <button type="button" data-token="race_car" aria-label="Race car">🏎️</button>
-        <button type="button" data-token="dog" aria-label="Dog">🐕</button>
-        <button type="button" data-token="battleship" aria-label="Battleship">🚢</button>
-        <button type="button" data-token="thimble" aria-label="Thimble">🧵</button>
-        <button type="button" data-token="boot" aria-label="Boot">👢</button>
-        <button type="button" data-token="cat" aria-label="Cat">🐈</button>
-        <button type="button" data-token="wheelbarrow" aria-label="Wheelbarrow">🛒</button>
-        <button type="button" data-token="duck" aria-label="Duck">🦆</button>
-        <button type="button" data-token="windmill" aria-label="Windmill">🌬️</button>
+        <button type="button" data-token="top_hat" aria-label="Top hat"><img src="/Game/sprites/Hat.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="race_car" aria-label="Race car"><img src="/Game/sprites/Car.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="dog" aria-label="Dog"><img src="/Game/sprites/Dog.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="battleship" aria-label="Battleship"><img src="/Game/sprites/Battleship.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="thimble" aria-label="Thimble"><img src="/Game/sprites/Thimble.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="boot" aria-label="Boot"><img src="/Game/sprites/Boot.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="cat" aria-label="Cat"><img src="/Game/sprites/cat.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="wheelbarrow" aria-label="Wheelbarrow"><img src="/Game/sprites/Wheelbarrow.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="duck" aria-label="Duck"><img src="/Game/sprites/duck.png" alt="" aria-hidden="true"></button>
+        <button type="button" data-token="windmill" aria-label="Windmill"><img src="/Game/sprites/windmill.png" alt="" aria-hidden="true"></button>
     </div>
 
     <p id="token-status" role="status" aria-live="polite"></p>
