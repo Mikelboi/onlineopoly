@@ -65,7 +65,7 @@
 
         #audio-controls {
             position: absolute;
-            top: 14%;
+            top: 15%;
             right: 14%;
             z-index: 20;
             display: flex;
@@ -2159,10 +2159,16 @@
     let soundEffectsEnabled = true;
 
     const soundEffects = {
-        bankruptcy: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Bankrupt.mp3',
-        buildHouse: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Building%20House.mp3',
-        buildHotel: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Building%20Hotel.mp3',
-        goToJail: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Go%20to%20Jail.mp3',
+        bankruptcy: '/Game/Audio/Monopoly (NES) Music - Bankrupt.mp3',
+        chanceCard: '/Game/Audio/Monopoly (NES) Music - Chance Card.mp3',
+        communityChestCard: '/Game/Audio/Monopoly (NES) Music - Community Chest Card.mp3',
+        rentPaid: '/Game/Audio/Monopoly - A Piper to Pay.mp3',
+        chaChing: '/Game/Audio/cha ching-sound effect (download).mp3',
+        railroad: '/Game/Audio/Monopoly - Hoppin the Train%27.mp3',
+        tax: '/Game/Audio/Monopoly - Tax Attack%21.mp3',
+        buildHouse: '/Game/Audio/Monopoly (NES) Music - Building House.mp3',
+        buildHotel: '/Game/Audio/Monopoly (NES) Music - Building Hotel.mp3',
+        goToJail: '/Game/Audio/Monopoly (NES) Music - Go to Jail.mp3',
         move: '/Game/Audio/Movesound.mp3'
     };
 
@@ -2182,6 +2188,7 @@
     );
     const bankruptcySoundsPlayed = new Set();
     const bankruptcySoundsPending = new Map();
+    const recentSoundEffectEvents = new Map();
     let knownBankruptPlayerIds = new Set();
     let bankruptcyStateInitialized = false;
 
@@ -2212,6 +2219,34 @@
 
                 return false;
             }
+        );
+    }
+
+    function isRailroadPropertyName(propertyName) {
+        return /railroad|short\s+line/i.test(String(propertyName || ''));
+    }
+
+    function isRailroadBoardPosition(position) {
+        return [5, 15, 25, 35].includes(Number(position));
+    }
+
+    function playSoundEffectOnceForEvent(effectName, eventKey) {
+        const key = `${effectName}:${eventKey}`;
+        const now = Date.now();
+
+        if ((recentSoundEffectEvents.get(key) || 0) > now) {
+            return Promise.resolve(false);
+        }
+
+        recentSoundEffectEvents.set(key, now + 2000);
+        window.setTimeout(() => recentSoundEffectEvents.delete(key), 2000);
+        return playSoundEffect(effectName);
+    }
+
+    function signalAuctionMusic(action) {
+        window.parent.postMessage(
+            { type: `onlineopoly-auction-music-${action}` },
+            window.location.origin
         );
     }
 
@@ -2264,11 +2299,13 @@
                 : [])
         ].filter(Boolean);
 
-        bankruptcyResults.forEach(bankruptcy => {
-            playBankruptcySoundOnce(
-                bankruptcy.playerId ?? bankruptcy.player_id
-            );
-        });
+        return Promise.all(
+            bankruptcyResults.map(bankruptcy =>
+                playBankruptcySoundOnce(
+                    bankruptcy.playerId ?? bankruptcy.player_id
+                )
+            )
+        );
     }
 
     // Keep clicks on the audio controls from reaching the board's roll handler.
@@ -2416,7 +2453,14 @@
             return;
         }
 
-        playSoundEffect('move');
+        if (isRailroadBoardPosition(move.newPosition)) {
+            playSoundEffectOnceForEvent(
+                'railroad',
+                `${move.newPosition}:${move.diceTotal}`
+            );
+        } else {
+            playSoundEffect('move');
+        }
 
         diceResult.textContent = move.testRentLanding
             ? `${move.playerName} was moved to ${move.testPropertyName} ` +
@@ -2473,7 +2517,12 @@
             return;
         }
 
-        playBankruptcySoundOnce(data.playerId);
+        if (
+            Number(data.tradeResponderPlayerId) !==
+            Number(currentUserPlayerId)
+        ) {
+            playBankruptcySoundOnce(data.playerId);
+        }
 
         const latestGameData = await loadPlayerTokens();
         const winner = data.gameComplete
@@ -2637,6 +2686,10 @@
             }
 
             console.log('Property purchased:', data);
+            playSoundEffectOnceForEvent(
+                'chaChing',
+                `property:${data.propertyId}`
+            );
 
             diceResult.textContent =
                 `${data.playerName} purchased ${data.propertyName}.`;
@@ -2671,6 +2724,16 @@ async function finishAuction() {
         const result = await response.json();
 
         playBankruptcySoundsFromResult(result);
+
+        if (response.ok) {
+            signalAuctionMusic('stop');
+            if (result.status === 'completed' && result.propertyId) {
+                playSoundEffectOnceForEvent(
+                    'chaChing',
+                    `property:${result.propertyId}`
+                );
+            }
+        }
 
         console.log('Auction finish response:', {
             status: response.status,
@@ -2757,6 +2820,8 @@ function startAuctionCountdown(endsAt, propertyName) {
         socket.on('auctionStarted', (data) => {
             if (Number(data.gameId) !== Number(gameId)) return;
 
+            signalAuctionMusic('start');
+
             activeAuctionId = data.auctionId;
 
             propertyPurchaseMenu.hidden = true;
@@ -2787,6 +2852,15 @@ socket.on('auctionFinished', async (data) => {
         return;
     }
 
+    signalAuctionMusic('stop');
+
+    if (data.status === 'completed' && data.propertyId) {
+        playSoundEffectOnceForEvent(
+            'chaChing',
+            `property:${data.propertyId}`
+        );
+    }
+
     if (auctionTimer !== null) {
         clearInterval(auctionTimer);
         auctionTimer = null;
@@ -2814,6 +2888,13 @@ socket.on('auctionFinished', async (data) => {
                 return;
             }
 
+            if (!isRailroadPropertyName(data.propertyName)) {
+                playSoundEffectOnceForEvent(
+                    'rentPaid',
+                    `${data.propertyName}:${data.rent}`
+                );
+            }
+
             diceResult.textContent =
                 `${data.playerName} landed on ${data.propertyName} ` +
                 `and paid $${data.rent} rent to ${data.ownerPlayerName}.`;
@@ -2825,6 +2906,11 @@ socket.on('auctionFinished', async (data) => {
             if (Number(data.gameId) !== Number(gameId)) {
                 return;
             }
+
+            playSoundEffectOnceForEvent(
+                'tax',
+                `${data.taxName}:${data.amount}`
+            );
 
             diceResult.textContent =
                 data.taxName === 'Income Tax'
@@ -3107,7 +3193,7 @@ socket.on('auctionFinished', async (data) => {
                     });
                     const result = await response.json();
 
-                    playBankruptcySoundsFromResult(result);
+                    await playBankruptcySoundsFromResult(result);
 
                     if (!response.ok) {
                         throw new Error(
@@ -3617,6 +3703,12 @@ socket.on('auctionFinished', async (data) => {
                 return Promise.resolve();
             }
 
+            playSoundEffect(
+                cardDeckName === 'Community Chest'
+                    ? 'communityChestCard'
+                    : 'chanceCard'
+            );
+
             const cardName = card.id
                 .split('-')
                 .map(word => word[0].toUpperCase() + word.slice(1))
@@ -3784,6 +3876,13 @@ socket.on('auctionFinished', async (data) => {
 
         playBankruptcySoundsFromResult(data);
 
+        if (data.tax) {
+            playSoundEffectOnceForEvent(
+                'tax',
+                `${data.tax.taxName}:${data.tax.amount}`
+            );
+        }
+
         if (!response.ok) {
             if (response.status === 409) {
                 await loadPlayerTokens();
@@ -3793,11 +3892,29 @@ socket.on('auctionFinished', async (data) => {
 
         const oldPosition = Number(data.oldPosition);
         const newPosition = Number(data.newPosition);
+        if (isRailroadBoardPosition(newPosition)) {
+            const diceTotal = Number(data.dice?.total) ||
+                Number(data.dice?.die1) + Number(data.dice?.die2);
+            playSoundEffectOnceForEvent(
+                'railroad',
+                `${newPosition}:${diceTotal}`
+            );
+        }
+        if (
+            data.rent?.rentPaid &&
+            !isRailroadPropertyName(data.rent.propertyName)
+        ) {
+            playSoundEffectOnceForEvent(
+                'rentPaid',
+                `${data.rent.propertyName}:${data.rent.rent}`
+            );
+        }
         if (
             localGameMode &&
             Number.isFinite(oldPosition) &&
             Number.isFinite(newPosition) &&
-            oldPosition !== newPosition
+            oldPosition !== newPosition &&
+            !isRailroadBoardPosition(newPosition)
         ) {
             playSoundEffect('move');
         }
@@ -3953,6 +4070,13 @@ async function endTurn() {
         if (!response.ok) {
             throw new Error(
                 data.message || 'Could not purchase property.'
+            );
+        }
+
+        if (data.property?.propertyId) {
+            playSoundEffectOnceForEvent(
+                'chaChing',
+                `property:${data.property.propertyId}`
             );
         }
 
@@ -5285,6 +5409,10 @@ placeBidButton.addEventListener('click', async () => {
                 }
 
                 const data = await response.json();
+
+                if (data.activeAuction) {
+                    signalAuctionMusic('start');
+                }
 
                 const bankruptPlayerIds = new Set(
                     data.players

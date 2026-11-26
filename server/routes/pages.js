@@ -61,7 +61,7 @@ function serveMusicShell(requestUrl, res) {
 </head>
 <body>
     <iframe id="app-content" name="app-content" src="${safeUrl}" title="Onlineopoly" allow="autoplay"></iframe>
-    <script src="/Game/music.js"></script>
+    <script src="/Game/music.js?v=audio-loop-fix-20261126"></script>
     <script src="/Game/music-shell.js"></script>
 </body>
 </html>`);
@@ -149,9 +149,60 @@ function handlePageRequest(req, res) {
                 return;
             }
 
-            res.writeHead(200, {
+            const audioHeaders = {
                 'Content-Type':
-                    contentTypes[extension] || 'application/octet-stream'
+                    contentTypes[extension] || 'application/octet-stream',
+                'Accept-Ranges': 'bytes'
+            };
+            const rangeHeader = req.headers.range;
+            const rangeMatch = rangeHeader &&
+                /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+
+            if (rangeMatch) {
+                const totalLength = data.length;
+                let start = rangeMatch[1]
+                    ? Number(rangeMatch[1])
+                    : null;
+                let end = rangeMatch[2]
+                    ? Number(rangeMatch[2])
+                    : totalLength - 1;
+
+                if (start === null) {
+                    const suffixLength = end;
+                    start = Math.max(totalLength - suffixLength, 0);
+                    end = totalLength - 1;
+                }
+
+                if (
+                    !Number.isSafeInteger(start) ||
+                    !Number.isSafeInteger(end) ||
+                    start < 0 ||
+                    end < start ||
+                    start >= totalLength
+                ) {
+                    res.writeHead(416, {
+                        'Content-Range': `bytes */${totalLength}`,
+                        'Accept-Ranges': 'bytes'
+                    });
+                    res.end();
+                    return;
+                }
+
+                end = Math.min(end, totalLength - 1);
+                const audioChunk = data.subarray(start, end + 1);
+                res.writeHead(206, {
+                    ...audioHeaders,
+                    'Content-Length': audioChunk.length,
+                    'Content-Range':
+                        `bytes ${start}-${end}/${totalLength}`
+                });
+                res.end(audioChunk);
+                return;
+            }
+
+            res.writeHead(200, {
+                ...audioHeaders,
+                'Content-Length': data.length
             });
             res.end(data);
         });

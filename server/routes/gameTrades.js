@@ -474,7 +474,12 @@ function handleGameTradeRequest(
                                     bankruptcies.forEach(bankruptcy => {
                                         io.to(`game:${gameId}`).emit(
                                             'playerBankrupt',
-                                            { ...bankruptcy, gameId }
+                                            {
+                                                ...bankruptcy,
+                                                gameId,
+                                                tradeResponderPlayerId:
+                                                    respondingPlayerId
+                                            }
                                         );
                                     });
                                 }

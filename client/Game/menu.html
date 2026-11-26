@@ -96,6 +96,17 @@
             margin: 0;
         }
 
+        button.avatar-menu-icon.has-avatar {
+            padding: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
+        }
+
+        button.avatar-menu-icon.has-avatar:hover {
+            background: transparent;
+        }
+
         button.avatar-menu-icon:hover {
             background-color: #1b6f2b;
         }
@@ -168,6 +179,7 @@
     <script>
         const message = document.getElementById('message');
         const welcomeHeading = document.getElementById('welcome-heading');
+        const menuAvatarButton = document.getElementById('player-avatar');
         const menuAvatarImage = document.getElementById('menu-avatar-image');
         const defaultAvatarIcon = document.getElementById('default-avatar-icon');
 
@@ -180,6 +192,7 @@
                     welcomeHeading.textContent = `Welcome, ${result.username}!`;
 
                     if (result.avatarPath) {
+                        menuAvatarButton.classList.add('has-avatar');
                         menuAvatarImage.src = result.avatarPath;
                         menuAvatarImage.hidden = false;
                         defaultAvatarIcon.hidden = true;

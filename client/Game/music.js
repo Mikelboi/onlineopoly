@@ -41,6 +41,14 @@
                 return;
             }
 
+            const startParentMusic =
+                window.parent.onlineopolyStartMusicFromGesture;
+
+            if (typeof startParentMusic === 'function') {
+                startParentMusic();
+                return;
+            }
+
             window.parent.postMessage(
                 { type: 'onlineopoly-music-user-gesture' },
                 window.location.origin
@@ -63,13 +71,16 @@
         '/Game/Audio/Monopoly%20%281995%20PC%20Game%29%20Soundtrack%207.%20Passin%27%20Go%20%2B%20Download.mp3';
     const loginTrack =
         '/Game/Audio/Monopoly%20Tycoon%20OST%20-%201940s%20Theme.mp3';
+    const auctionTrack = '/Game/Audio/Monopoly - Bidding War.mp3';
     const music = new Audio();
     const musicButton = document.createElement('button');
     let musicEnabled = true;
     let activeTrack = '';
+    let auctionMusicSnapshot = null;
 
     localStorage.setItem(preferenceKey, 'true');
-    music.loop = false;
+    music.autoplay = true;
+    music.loop = true;
     music.volume = 0.25;
 
     musicButton.type = 'button';
@@ -91,9 +102,9 @@
     document.body.appendChild(musicButton);
 
     function updateButton() {
-        const isPlaying = !music.paused;
-        musicButton.textContent = isPlaying ? 'Music: On' : 'Music: Off';
-        musicButton.setAttribute('aria-pressed', String(isPlaying));
+        const isEnabled = musicEnabled;
+        musicButton.textContent = isEnabled ? 'Music: On' : 'Music: Off';
+        musicButton.setAttribute('aria-pressed', String(isEnabled));
 
         const boardMusicButton = document
             .getElementById('app-content')
@@ -101,21 +112,27 @@
             ?.getElementById('music-toggle');
 
         if (boardMusicButton) {
-            boardMusicButton.textContent = isPlaying
+            boardMusicButton.textContent = isEnabled
                 ? 'Music: On'
                 : 'Music: Off';
-            boardMusicButton.setAttribute('aria-pressed', String(isPlaying));
+            boardMusicButton.setAttribute('aria-pressed', String(isEnabled));
         }
     }
 
     function updateMusicControlLocation(pathname) {
         const isBoardPage = pathname === '/board';
-        const boardMusicButton = document
-            .getElementById('app-content')
+        const isRulesPage = pathname === '/rules';
+        const appFrame = document.getElementById('app-content');
+        const boardMusicButton = appFrame
             ?.contentDocument
             ?.getElementById('music-toggle');
 
+        // Use the board's own music control beside its sound effects button.
         musicButton.hidden = isBoardPage;
+        musicButton.style.bottom = isRulesPage ? '16px' : 'auto';
+        musicButton.style.top = isRulesPage ? 'auto' : '16px';
+        musicButton.style.left = 'auto';
+        musicButton.style.right = '16px';
         if (boardMusicButton) {
             boardMusicButton.hidden = !isBoardPage;
         }
@@ -131,8 +148,80 @@
 
     function playMusic() {
         if (musicEnabled) {
+            music.loop = true;
             music.play().catch(updateButton);
         }
+    }
+
+    // Call synchronously from a click or key press inside the app iframe so
+    // browsers can use that gesture to permit audio playback in this page.
+    window.onlineopolyStartMusicFromGesture = () => {
+        if (musicEnabled && music.paused) {
+            playMusic();
+        }
+    };
+
+    function startAuctionMusic() {
+        if (auctionMusicSnapshot) {
+            return;
+        }
+
+        savePosition();
+        auctionMusicSnapshot = {
+            source: music.src,
+            track: activeTrack,
+            time: music.currentTime
+        };
+        activeTrack = auctionTrack;
+        music.pause();
+        music.src = auctionTrack;
+        music.loop = true;
+        music.load();
+        music.addEventListener('loadedmetadata', () => {
+            if (auctionMusicSnapshot && activeTrack === auctionTrack) {
+                playMusic();
+            }
+        }, { once: true });
+    }
+
+    function stopAuctionMusic(restorePreviousTrack = true) {
+        if (!auctionMusicSnapshot) {
+            return;
+        }
+
+        const snapshot = auctionMusicSnapshot;
+        auctionMusicSnapshot = null;
+        music.pause();
+        music.loop = false;
+
+        if (!restorePreviousTrack) {
+            activeTrack = '';
+            return;
+        }
+
+        if (!snapshot.source) {
+            activeTrack = '';
+            useTrackForPage(window.location.pathname);
+            return;
+        }
+
+        activeTrack = snapshot.track;
+        music.src = snapshot.source;
+        music.loop = true;
+        music.load();
+        music.addEventListener('loadedmetadata', () => {
+            if (Number.isFinite(snapshot.time) && snapshot.time > 0) {
+                music.currentTime = Number.isFinite(music.duration) && music.duration > 0
+                    ? snapshot.time % music.duration
+                    : snapshot.time;
+            }
+
+            if (activeTrack) {
+                sessionStorage.setItem(positionKey, String(music.currentTime));
+                sessionStorage.setItem(positionTrackKey, activeTrack);
+            }
+            playMusic();
+        }, { once: true });
     }
 
     function useTrackForPage(pathname) {
@@ -145,6 +234,7 @@
         }
 
         const trackUrl = new URL(requestedTrack, window.location.origin).href;
+        music.loop = true;
 
         if (music.src === trackUrl) {
             playMusic();
@@ -177,21 +267,28 @@
     music.addEventListener('timeupdate', savePosition);
     window.addEventListener('pagehide', savePosition);
     window.addEventListener('onlineopoly:pagechange', event => {
+        if (auctionMusicSnapshot && event.detail.pathname !== '/board') {
+            stopAuctionMusic(false);
+        }
         updateMusicControlLocation(event.detail.pathname);
         useTrackForPage(event.detail.pathname);
+    });
+    window.addEventListener('resize', () => {
+        updateMusicControlLocation(window.location.pathname);
     });
 
     music.addEventListener('play', updateButton);
     music.addEventListener('pause', updateButton);
     music.addEventListener('ended', () => {
         if (musicEnabled) {
+            music.loop = true;
             music.currentTime = 0;
             playMusic();
         }
     });
 
     function toggleMusic() {
-        if (music.paused) {
+        if (!musicEnabled || music.paused) {
             musicEnabled = true;
             localStorage.setItem(preferenceKey, 'true');
             playMusic();
@@ -229,6 +326,22 @@
             music.paused
         ) {
             playMusic();
+            return;
+        }
+
+        if (
+            validAppMessage &&
+            event.data?.type === 'onlineopoly-auction-music-start'
+        ) {
+            startAuctionMusic();
+            return;
+        }
+
+        if (
+            validAppMessage &&
+            event.data?.type === 'onlineopoly-auction-music-stop'
+        ) {
+            stopAuctionMusic();
         }
     });
 })();
