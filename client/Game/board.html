@@ -63,6 +63,29 @@
             font-weight: bold;
         }
 
+        #audio-controls {
+            position: absolute;
+            top: 14%;
+            right: 14%;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        #audio-controls button {
+            padding: 8px 12px;
+            width: auto;
+            border: 2px solid #356b43;
+            border-radius: 8px;
+            background: #fff;
+            color: #222;
+            font-weight: bold;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
         #back-to-menu-button {
             padding: 10px 18px;
             border: 2px solid #173a24;
@@ -344,6 +367,7 @@
         ======================================== */
 
         .game-board {
+            position: relative;
             display: grid;
             grid-template-columns: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
             grid-template-rows: 1.5fr repeat(9, minmax(0, 1fr)) 1.5fr;
@@ -1899,6 +1923,23 @@
 
     <section id="game-board-section">
         <div class="game-board" id="game-board">
+            <div id="audio-controls">
+                <button
+                    type="button"
+                    id="music-toggle"
+                    aria-pressed="false"
+                >
+                    Music: Off
+                </button>
+
+                <button
+                    type="button"
+                    id="sound-toggle"
+                    aria-pressed="true"
+                >
+                    Sound Effects: On
+                </button>
+            </div>
             <div class="board-center">
                 <h2 class="center-logo">ONLINEOPOLY</h2>
                 <div class="card-deck-spots" aria-label="Card deck spaces">
@@ -1916,20 +1957,20 @@
                     </div>
                 </div>
 
-            <div id="game-controls">
-        <p id="current-turn-indicator">Loading turn...</p>
-        <p id="diceResult">Roll the dice to move!</p>
-        <button id="back-to-menu-button" type="button" hidden>
-            Back to Menu
-        </button>
-        <section id="pending-debts-panel" aria-live="polite" hidden>
-            <strong>Pending payments</strong>
-            <div id="pending-debts-list"></div>
-        </section>
-        <button id="use-jail-card-button" type="button" hidden>
-            Use Get Out of Jail Free Card
-        </button>
-    </div>
+                <div id="game-controls">
+                    <p id="current-turn-indicator">Loading turn...</p>
+                    <p id="diceResult">Roll the dice to move!</p>
+                    <button id="back-to-menu-button" type="button" hidden>
+                        Back to Menu
+                    </button>
+                    <section id="pending-debts-panel" aria-live="polite" hidden>
+                        <strong>Pending payments</strong>
+                        <div id="pending-debts-list"></div>
+                    </section>
+                    <button id="use-jail-card-button" type="button" hidden>
+                        Use Get Out of Jail Free Card
+                    </button>
+                </div>
 
     <dialog id="trade-dialog" aria-labelledby="trade-dialog-title">
         <h2 id="trade-dialog-title">Propose a Trade</h2>
@@ -2113,6 +2154,139 @@
         duck: '/Game/sprites/duck.png',
         windmill: '/Game/sprites/windmill.png'
     };
+
+    const soundToggleButton = document.getElementById('sound-toggle');
+    let soundEffectsEnabled = true;
+
+    const soundEffects = {
+        bankruptcy: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Bankrupt.mp3',
+        buildHouse: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Building%20House.mp3',
+        buildHotel: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Building%20Hotel.mp3',
+        goToJail: '/Game/Audio/Monopoly%20%28NES%29%20Music%20-%20Go%20to%20Jail.mp3',
+        move: '/Game/Audio/Movesound.mp3'
+    };
+
+    const soundEffectAudio = Object.fromEntries(
+        Object.entries(soundEffects).map(([effectName, audioPath]) => {
+            const audio = new Audio(audioPath);
+            audio.preload = 'auto';
+            audio.volume = effectName === 'bankruptcy' ? 1 : 0.7;
+            audio.addEventListener('error', () => {
+                console.warn(
+                    `Could not load ${effectName} sound effect from ${audioPath}.`
+                );
+            });
+            audio.load();
+            return [effectName, audio];
+        })
+    );
+    const bankruptcySoundsPlayed = new Set();
+    const bankruptcySoundsPending = new Map();
+    let knownBankruptPlayerIds = new Set();
+    let bankruptcyStateInitialized = false;
+
+    function playSoundEffect(effectName, afterPlayback) {
+        if (!soundEffectsEnabled) {
+            return Promise.resolve(false);
+        }
+
+        const audio = soundEffectAudio[effectName];
+        if (!audio) {
+            return Promise.resolve(false);
+        }
+
+        if (afterPlayback) {
+            audio.addEventListener('ended', afterPlayback, { once: true });
+        }
+
+        audio.pause();
+        audio.currentTime = 0;
+        return audio.play().then(
+            () => true,
+            error => {
+                console.warn(`Could not play ${effectName} sound effect:`, error);
+
+                if (afterPlayback) {
+                    afterPlayback();
+                }
+
+                return false;
+            }
+        );
+    }
+
+    function playBankruptcySoundOnce(playerId) {
+        const validPlayerId = Number(playerId);
+
+        if (
+            Number.isSafeInteger(validPlayerId) &&
+            validPlayerId > 0 &&
+            bankruptcySoundsPlayed.has(validPlayerId)
+        ) {
+            return Promise.resolve(true);
+        }
+
+        if (
+            Number.isSafeInteger(validPlayerId) &&
+            validPlayerId > 0 &&
+            bankruptcySoundsPending.has(validPlayerId)
+        ) {
+            return bankruptcySoundsPending.get(validPlayerId).then(
+                played => played || playBankruptcySoundOnce(validPlayerId)
+            );
+        }
+
+        const playback = playSoundEffect('bankruptcy').then(played => {
+            if (played && Number.isSafeInteger(validPlayerId) && validPlayerId > 0) {
+                bankruptcySoundsPlayed.add(validPlayerId);
+            }
+
+            if (Number.isSafeInteger(validPlayerId) && validPlayerId > 0) {
+                bankruptcySoundsPending.delete(validPlayerId);
+            }
+
+            return played;
+        });
+
+        if (Number.isSafeInteger(validPlayerId) && validPlayerId > 0) {
+            bankruptcySoundsPending.set(validPlayerId, playback);
+        }
+
+        return playback;
+    }
+
+    function playBankruptcySoundsFromResult(result) {
+        const bankruptcyResults = [
+            result?.bankruptcy,
+            result?.payment?.bankruptcy,
+            ...(Array.isArray(result?.bankruptcies)
+                ? result.bankruptcies
+                : [])
+        ].filter(Boolean);
+
+        bankruptcyResults.forEach(bankruptcy => {
+            playBankruptcySoundOnce(
+                bankruptcy.playerId ?? bankruptcy.player_id
+            );
+        });
+    }
+
+    // Keep clicks on the audio controls from reaching the board's roll handler.
+    document.getElementById('audio-controls').addEventListener('click', event => {
+        event.stopPropagation();
+    });
+
+    soundToggleButton.addEventListener('click', () => {
+        soundEffectsEnabled = !soundEffectsEnabled;
+        soundToggleButton.textContent = soundEffectsEnabled
+            ? 'Sound Effects: On'
+            : 'Sound Effects: Off';
+        soundToggleButton.setAttribute(
+            'aria-pressed',
+            String(soundEffectsEnabled)
+        );
+    });
+
     const PLAYER_TOKEN_OUTLINE_COLORS = [
         '#00bfff',
         '#ff3b8d',
@@ -2237,10 +2411,12 @@
         .getElementById('back-to-menu-button')
         .addEventListener('click', event => event.stopPropagation());
 
-        socket.on('playerMoved', async (move) => {
+    socket.on('playerMoved', async (move) => {
         if (Number(move.gameId) !== Number(gameId)) {
             return;
         }
+
+        playSoundEffect('move');
 
         diceResult.textContent = move.testRentLanding
             ? `${move.playerName} was moved to ${move.testPropertyName} ` +
@@ -2248,13 +2424,28 @@
             : `${move.playerName} rolled a ${move.dice.die1} and a ` +
                 `${move.dice.die2}.`;
 
-        await loadPlayerTokens();
+        const gameData = await loadPlayerTokens();
+        const movedPlayer = gameData?.players?.find(
+            player => Number(player.player_id) === Number(move.playerId)
+        );
+
+        if (
+            Number(move.oldPosition) !== 10 &&
+            Number(move.newPosition) === 10 &&
+            Number(movedPlayer?.is_in_jail) === 1
+        ) {
+            playSoundEffect('goToJail');
+        }
     });
 
     socket.on('buildingPurchased', async data => {
         if (Number(data.gameId) !== Number(gameId)) {
             return;
         }
+
+        playSoundEffect(
+            data.buildingType === 'hotel' ? 'buildHotel' : 'buildHouse'
+        );
 
         const buildingName =
             data.buildingType === 'house' ? 'a house' : 'a hotel';
@@ -2281,6 +2472,8 @@
         if (Number(data.gameId) !== Number(gameId)) {
             return;
         }
+
+        playBankruptcySoundOnce(data.playerId);
 
         const latestGameData = await loadPlayerTokens();
         const winner = data.gameComplete
@@ -2476,6 +2669,8 @@ async function finishAuction() {
         });
 
         const result = await response.json();
+
+        playBankruptcySoundsFromResult(result);
 
         console.log('Auction finish response:', {
             status: response.status,
@@ -2845,6 +3040,8 @@ socket.on('auctionFinished', async (data) => {
                     });
                     const result = await response.json();
 
+                    playBankruptcySoundsFromResult(result);
+
                     if (!response.ok) {
                         throw new Error(
                             result.message || 'Could not send trade offer.'
@@ -2909,6 +3106,8 @@ socket.on('auctionFinished', async (data) => {
                         })
                     });
                     const result = await response.json();
+
+                    playBankruptcySoundsFromResult(result);
 
                     if (!response.ok) {
                         throw new Error(
@@ -3225,6 +3424,8 @@ socket.on('auctionFinished', async (data) => {
                             );
                             const result = await response.json();
 
+                            playBankruptcySoundsFromResult(result);
+
                             if (!response.ok) {
                                 throw new Error(
                                     result.message ||
@@ -3316,6 +3517,8 @@ socket.on('auctionFinished', async (data) => {
                 });
 
                 const data = await response.json();
+
+                playBankruptcySoundsFromResult(data);
 
                 if (!response.ok) {
                     throw new Error(
@@ -3579,6 +3782,8 @@ socket.on('auctionFinished', async (data) => {
 
         const data = await response.json();
 
+        playBankruptcySoundsFromResult(data);
+
         if (!response.ok) {
             if (response.status === 409) {
                 await loadPlayerTokens();
@@ -3586,10 +3791,20 @@ socket.on('auctionFinished', async (data) => {
             throw new Error(data.message || 'Could not roll dice.');
         }
 
+        const oldPosition = Number(data.oldPosition);
+        const newPosition = Number(data.newPosition);
+        if (
+            localGameMode &&
+            Number.isFinite(oldPosition) &&
+            Number.isFinite(newPosition) &&
+            oldPosition !== newPosition
+        ) {
+            playSoundEffect('move');
+        }
+
         rolledDoubles = data.rolledDoubles;
 
         await showChanceCardPopup(data.chanceCard, data.cardDeckName);
-
 
         const rollMessage = data.testRentLanding
             ? `Test landing: Player 2 was moved to ${data.testPropertyName}.`
@@ -3615,6 +3830,24 @@ socket.on('auctionFinished', async (data) => {
         }
 
         const gameData = await loadPlayerTokens();
+
+        if (
+            localGameMode &&
+            !data.jailAttempt &&
+            !data.jailBailPaid &&
+            Number(data.oldPosition) !== 10 &&
+            Number(data.newPosition) === 10
+        ) {
+            const movedPlayer = gameData?.players?.find(
+                player =>
+                    Number(player.player_id) ===
+                    Number(gameData.game?.current_player_id)
+            );
+
+            if (Number(movedPlayer?.is_in_jail) === 1) {
+                playSoundEffect('goToJail');
+            }
+        }
 
         if (data.bankruptcy) {
             return;
@@ -3673,6 +3906,10 @@ async function endTurn() {
 }
 
    document.getElementById('game-board').addEventListener('click', (event) => {
+    if (event.target.closest('#audio-controls')) {
+        return;
+    }
+
     if (tradeDialog.open || tradeOffersDialog.open) {
         return;
     }
@@ -3710,6 +3947,8 @@ async function endTurn() {
         });
 
         const data = await response.json();
+
+        playBankruptcySoundsFromResult(data);
 
         if (!response.ok) {
             throw new Error(
@@ -4622,6 +4861,26 @@ placeBidButton.addEventListener('click', async () => {
                     );
                 }
 
+                if (localGameMode) {
+                    const buildingSound =
+                        buildingType === 'hotel' ? 'buildHotel' : 'buildHouse';
+
+                    if (data.bankruptcy) {
+                        const bankruptPlayerId =
+                            Number(data.bankruptcy.playerId);
+                        if (Number.isSafeInteger(bankruptPlayerId)) {
+                            bankruptcySoundsPlayed.add(bankruptPlayerId);
+                        }
+                    }
+
+                    playSoundEffect(
+                        buildingSound,
+                        data.bankruptcy
+                            ? () => playSoundEffect('bankruptcy')
+                            : undefined
+                    );
+                }
+
                 diceResult.textContent = formatLocalActionMessage(data.message);
                 await loadPlayerTokens();
             } catch (error) {
@@ -5027,6 +5286,23 @@ placeBidButton.addEventListener('click', async () => {
 
                 const data = await response.json();
 
+                const bankruptPlayerIds = new Set(
+                    data.players
+                        .filter(player => Number(player.is_bankrupt) === 1)
+                        .map(player => Number(player.player_id))
+                );
+
+                if (bankruptcyStateInitialized) {
+                    bankruptPlayerIds.forEach(playerId => {
+                        if (!knownBankruptPlayerIds.has(playerId)) {
+                            playBankruptcySoundOnce(playerId);
+                        }
+                    });
+                }
+
+                knownBankruptPlayerIds = bankruptPlayerIds;
+                bankruptcyStateInitialized = true;
+
                 if (localGameActions) {
                     localGameActions.hidden = !(
                         localGameMode &&
@@ -5212,6 +5488,7 @@ placeBidButton.addEventListener('click', async () => {
         }
         loadPlayerTokens();
     </script>
+    <script src="/Game/music.js"></script>
 </body>
 </html>
 

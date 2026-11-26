@@ -114,6 +114,14 @@
         #message {
             text-align: center;
         }
+
+        #menu-music-toggle {
+            background-color: #238636;
+        }
+
+        #menu-music-toggle:hover {
+            background-color: #176b2a;
+        }
     </style>
 </head>
 
@@ -149,6 +157,9 @@
         <button id="how-to-play">How to Play</button>
         <button id="Statistics">Statistics</button>
         <button id="log-out">Log Out</button>
+        <button id="menu-music-toggle" type="button" aria-pressed="false">
+            Music: Off
+        </button>
 
         <p id="message" role="status"></p>
         
@@ -234,5 +245,6 @@
             }
         });
     </script>
+    <script src="/Game/music.js"></script>
 </body>
 </html>
